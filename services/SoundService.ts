@@ -1,7 +1,7 @@
 
 import { Howl, Howler } from 'howler';
 
-const BASE_FREQ_A1 = 40.0; 
+const BASE_FREQ_A1 = 27.5; // A0 - Deep Sub-bass foundation
 
 // CYBERPUNK SCALES (Darker, Exotic)
 const SCALE_LOCRIAN = [0, 1, 3, 5, 6, 8, 10, 12]; 
@@ -27,44 +27,44 @@ interface ThemeConfig {
 const THEMES: Record<ThemeType, ThemeConfig> = {
   MENU: {
     scale: SCALE_LOCRIAN,
-    baseOctave: 1, 
-    bpm: 25, 
-    arpRate: 0.1,
-    padCutoff: 200, 
+    baseOctave: 2, 
+    bpm: 18, // Very slow, atmospheric
+    arpRate: 0.05, // Sparse, rare droplets
+    padCutoff: 120, // Very dark filter
     reverbLevel: 0.95,
     waveType: 'sine', 
-    detuneAmount: 3,
+    detuneAmount: 4,
     hasSubBass: true
   },
   BATTLE_STD: {
     scale: SCALE_PHRYGIAN_DOM,
     baseOctave: 2,
-    bpm: 40, 
-    arpRate: 0.4,
-    padCutoff: 600, 
-    reverbLevel: 0.8,
+    bpm: 28, 
+    arpRate: 0.15,
+    padCutoff: 350, 
+    reverbLevel: 0.85,
     waveType: 'triangle', 
-    detuneAmount: 5,
+    detuneAmount: 6,
     hasSubBass: true
   },
   BATTLE_VOID: {
     scale: SCALE_HUNGARIAN_MINOR,
     baseOctave: 1,
-    bpm: 30,
-    arpRate: 0.2,
-    padCutoff: 300,
+    bpm: 20,
+    arpRate: 0.1,
+    padCutoff: 200,
     reverbLevel: 0.98,
     waveType: 'sine',
-    detuneAmount: 4,
+    detuneAmount: 5,
     hasSubBass: true
   },
   BATTLE_SOUP: {
     scale: SCALE_DORIAN_b2,
     baseOctave: 2,
-    bpm: 45, 
-    arpRate: 0.5,
-    padCutoff: 500,
-    reverbLevel: 0.85,
+    bpm: 32, 
+    arpRate: 0.2,
+    padCutoff: 300,
+    reverbLevel: 0.9,
     waveType: 'triangle', 
     detuneAmount: 8,
     hasSubBass: true
@@ -72,42 +72,42 @@ const THEMES: Record<ThemeType, ThemeConfig> = {
   BATTLE_DARK: {
     scale: SCALE_LOCRIAN,
     baseOctave: 1,
-    bpm: 35,
-    arpRate: 0.3,
-    padCutoff: 400,
+    bpm: 24,
+    arpRate: 0.1,
+    padCutoff: 250,
     reverbLevel: 0.9,
     waveType: 'sine', 
-    detuneAmount: 6, 
+    detuneAmount: 8, 
     hasSubBass: true
   },
   BATTLE_ACID: {
       scale: SCALE_HIRAJOSHI,
       baseOctave: 2,
-      bpm: 50, 
-      arpRate: 0.6,
-      padCutoff: 800, 
-      reverbLevel: 0.7,
+      bpm: 35, 
+      arpRate: 0.25,
+      padCutoff: 500, 
+      reverbLevel: 0.8,
       waveType: 'triangle', 
-      detuneAmount: 8,
+      detuneAmount: 10,
       hasSubBass: false
   },
   EVOLUTION: {
     scale: SCALE_HIRAJOSHI,
     baseOctave: 3,
-    bpm: 60, 
-    arpRate: 0.8, 
-    padCutoff: 1000,
-    reverbLevel: 0.6,
+    bpm: 40, 
+    arpRate: 0.3, 
+    padCutoff: 600,
+    reverbLevel: 0.7,
     waveType: 'sine',
-    detuneAmount: 2,
+    detuneAmount: 3,
     hasSubBass: false
   },
   LEADERBOARD: {
     scale: SCALE_PHRYGIAN_DOM,
     baseOctave: 2,
-    bpm: 40,
-    arpRate: 0.2,
-    padCutoff: 400,
+    bpm: 25,
+    arpRate: 0.1,
+    padCutoff: 300,
     reverbLevel: 0.9,
     waveType: 'sine',
     detuneAmount: 5,
@@ -144,17 +144,19 @@ class OscillatorVoice {
     this.osc2.start();
   }
 
-  play(duration: number, volume: number, now: number, attack: number = 0.05, release: number = 0.1) {
+  play(duration: number, volume: number, now: number, attack: number = 0.5, release: number = 2.0) {
     this.gain.gain.cancelScheduledValues(now);
     this.gain.gain.setValueAtTime(0, now);
-    this.gain.gain.linearRampToValueAtTime(volume * 0.5, now + attack); 
+    // Slow swelling attack
+    this.gain.gain.linearRampToValueAtTime(volume * 0.4, now + attack); 
+    // Long release tail
     this.gain.gain.exponentialRampToValueAtTime(0.001, now + duration + release);
   }
 
   stop(now: number) {
-    this.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-    this.osc.stop(now + 0.2);
-    this.osc2.stop(now + 0.2);
+    this.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    this.osc.stop(now + 1.0);
+    this.osc2.stop(now + 1.0);
   }
 }
 
@@ -198,30 +200,31 @@ class SynthEngine {
     if (!this.ctx) return;
     
     this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.6; 
+    this.masterGain.gain.value = 0.5; // Slightly reduced master for headroom
 
     this.distortion = this.ctx.createWaveShaper();
-    this.distortion.curve = this.makeDistortionCurve(10);
+    this.distortion.curve = this.makeDistortionCurve(5); // Less distortion, cleaner sound
     this.distortion.oversample = '2x';
 
     this.compressor = this.ctx.createDynamicsCompressor();
-    this.compressor.threshold.value = -18;
-    this.compressor.ratio.value = 10;
-    this.compressor.attack.value = 0.01;
-    this.compressor.release.value = 0.2;
+    this.compressor.threshold.value = -24;
+    this.compressor.ratio.value = 12;
+    this.compressor.attack.value = 0.05;
+    this.compressor.release.value = 0.4;
 
     this.masterGain.connect(this.distortion);
     this.distortion.connect(this.compressor);
     this.compressor.connect(this.ctx.destination);
 
-    this.delayNode = this.ctx.createDelay();
-    this.delayNode.delayTime.value = 0.7; 
+    // Ethereal Delay Setup
+    this.delayNode = this.ctx.createDelay(5.0); // Allow longer delays
+    this.delayNode.delayTime.value = 1.5; // Very long, spacious delay
     this.feedbackGain = this.ctx.createGain();
-    this.feedbackGain.gain.value = 0.7; 
+    this.feedbackGain.gain.value = 0.6; // Moderate feedback for trails
 
     const delayFilter = this.ctx.createBiquadFilter();
     delayFilter.type = 'lowpass';
-    delayFilter.frequency.value = 600; 
+    delayFilter.frequency.value = 400; // Darken the echoes significantly
 
     this.delayNode.connect(delayFilter);
     delayFilter.connect(this.feedbackGain);
@@ -230,7 +233,7 @@ class SynthEngine {
 
     this.padFilter = this.ctx.createBiquadFilter();
     this.padFilter.type = 'lowpass';
-    this.padFilter.Q.value = 1; 
+    this.padFilter.Q.value = 0.5; // Gentler slope
     this.padFilter.connect(this.masterGain);
     this.padFilter.connect(this.delayNode);
   }
@@ -256,11 +259,12 @@ class SynthEngine {
     if (this.ctx) {
         const now = this.ctx.currentTime;
         if (this.padFilter) {
-            this.padFilter.frequency.exponentialRampToValueAtTime(Math.max(100, config.padCutoff), now + 3);
+            // Slow filter movement
+            this.padFilter.frequency.exponentialRampToValueAtTime(Math.max(80, config.padCutoff), now + 5);
         }
 
         if (this.feedbackGain) {
-            this.feedbackGain.gain.linearRampToValueAtTime(config.reverbLevel * 0.7, now + 3);
+            this.feedbackGain.gain.linearRampToValueAtTime(config.reverbLevel * 0.6, now + 5);
         }
         
         if (this.isPlaying) {
@@ -275,7 +279,7 @@ class SynthEngine {
     if (this.ctx.state === 'suspended') this.ctx.resume();
 
     this.isPlaying = true;
-    this.masterGain!.gain.value = 0.6; 
+    this.masterGain!.gain.value = 0.5; 
     
     this.startDrone();
     this.scheduleLoop();
@@ -286,7 +290,7 @@ class SynthEngine {
       this.stopDrone();
 
       this.droneGain = this.ctx.createGain();
-      this.droneGain.gain.value = 0.25; // Boosted drone volume
+      this.droneGain.gain.value = 0.2; // Subtle drone
 
       // Main Drone
       this.droneOsc = this.ctx.createOscillator();
@@ -296,7 +300,7 @@ class SynthEngine {
       
       this.droneOsc.connect(this.droneGain);
 
-      // Sub Bass
+      // Sub Bass - The foundation
       if (this.currentTheme.hasSubBass) {
           this.droneSub = this.ctx.createOscillator();
           this.droneSub.type = 'sine';
@@ -307,7 +311,7 @@ class SynthEngine {
       
       const lpf = this.ctx.createBiquadFilter();
       lpf.type = 'lowpass';
-      lpf.frequency.value = 150; 
+      lpf.frequency.value = 100; // Very deep filter for drone
 
       this.droneGain.connect(lpf);
       lpf.connect(this.masterGain!);
@@ -337,7 +341,8 @@ class SynthEngine {
     const sixteenth = beatTime / 4;
 
     // --- CHORD PROGRESSION ---
-    if (this.step % 64 === 0) { 
+    // Slower progression (128 steps)
+    if (this.step % 128 === 0) { 
         const progression = [0, 2, 4, 1, 5, 0];
         this.chordRootIndex = progression[Math.floor(Math.random() * progression.length)];
         
@@ -345,38 +350,39 @@ class SynthEngine {
              const semi = scale[this.chordRootIndex % scale.length];
              const freq = BASE_FREQ_A1 * Math.pow(2, (baseOctave - 1) + semi/12);
              
-             this.droneOsc.frequency.exponentialRampToValueAtTime(freq, now + 1.0);
-             this.droneSub.frequency.exponentialRampToValueAtTime(freq * 0.5, now + 1.0);
+             // Very slow glide for drone
+             this.droneOsc.frequency.exponentialRampToValueAtTime(freq, now + 4.0);
+             this.droneSub.frequency.exponentialRampToValueAtTime(freq * 0.5, now + 4.0);
         }
 
-        this.playPad(now, 12); 
+        this.playPad(now, 16); // Longer pad duration
     }
 
-    // --- SPACE ARPEGGIATOR ---
+    // --- ETHEREAL ARPEGGIATOR ---
     if (Math.random() < arpRate) {
         const chordIntervals = [0, 2, 4, 7]; 
         const interval = chordIntervals[Math.floor(Math.random() * chordIntervals.length)];
         const scaleIndex = (this.chordRootIndex + interval) % scale.length;
         
-        const octaveOffset = Math.floor(Math.random() * 2);
+        const octaveOffset = Math.floor(Math.random() * 2) + 1; // Higher octaves for sparkles
 
         const semitones = scale[scaleIndex];
-        const freq = BASE_FREQ_A1 * Math.pow(2, (baseOctave + 1 + octaveOffset) + semitones/12);
+        const freq = BASE_FREQ_A1 * Math.pow(2, (baseOctave + octaveOffset) + semitones/12);
         
         const voice = new OscillatorVoice(
             this.ctx, 
-            this.currentTheme.waveType === 'square' ? 'triangle' : 'sine', 
+            'sine', // Force sine for pure, bell-like tones
             freq, 
             this.padFilter!,
             detuneAmount
         );
         
-        // Boosted arp volume
-        voice.play(sixteenth * 3, 0.15, now, 0.1, 0.8);
+        // Long, gentle bell sounds
+        voice.play(sixteenth * 8, 0.15, now, 0.1, 3.0);
         
         setTimeout(() => {
             if (this.ctx) voice.stop(this.ctx.currentTime);
-        }, 1500);
+        }, 4000);
     }
 
     this.step++;
@@ -394,14 +400,15 @@ class SynthEngine {
       });
 
       notes.forEach(freq => {
-          const wave = this.currentTheme.waveType === 'sawtooth' ? 'triangle' : this.currentTheme.waveType;
-          const v = new OscillatorVoice(this.ctx!, wave, freq, this.padFilter!, detuneAmount / 2);
-          // Boosted pad volume
-          v.play(duration, 0.1, now, 4.0, 6.0); 
+          // Use triangle for warmer pads, avoid harsh saws
+          const wave = 'triangle';
+          const v = new OscillatorVoice(this.ctx!, wave, freq, this.padFilter!, detuneAmount);
+          // Very long attack/release for ambient wash
+          v.play(duration, 0.12, now, 5.0, 8.0); 
           
           setTimeout(() => {
               if (this.ctx) v.stop(this.ctx.currentTime);
-          }, (duration + 8) * 1000);
+          }, (duration + 10) * 1000);
       });
   }
 
@@ -474,6 +481,7 @@ class SoundManager {
     enabled: boolean = false;
     initialized: boolean = false;
     sfx: Record<string, Howl> = {};
+    lastSfxTime: number = 0;
 
     constructor() {
         this.engine = new SynthEngine();
@@ -484,14 +492,14 @@ class SoundManager {
         
         try {
             this.sfx['collision'] = new Howl({
-                src: [createAudioDataURI('impact', 0.1, { volume: 0.3 })],
+                src: [createAudioDataURI('impact', 0.1, { volume: 0.1 })], // Further reduced amplitude
                 format: ['wav'],
-                volume: 0.2
+                volume: 0.05 // Further reduced gain
             });
             this.sfx['capture'] = new Howl({
-                src: [createAudioDataURI('swell', 0.4, { volume: 0.6 })],
+                src: [createAudioDataURI('swell', 0.4, { volume: 0.2 })], // Further reduced amplitude
                 format: ['wav'],
-                volume: 0.5
+                volume: 0.12 // Further reduced gain
             });
         } catch(e) { console.warn("SFX gen failed", e); }
         
@@ -528,14 +536,20 @@ class SoundManager {
 
     playBatch(events: { collisions: number, captures: number }) {
         if (!this.enabled) return;
+
+        const now = performance.now();
+        // Global Throttle: Prevent clipping by limiting to 1 sound every 100ms
+        if (now - this.lastSfxTime < 100) return;
         
         if (events.captures > 0) {
             const id = this.sfx['capture']?.play();
             this.sfx['capture']?.rate(0.9 + Math.random() * 0.2, id);
-        }
-        if (events.collisions > 0 && Math.random() < 0.1) {
+            this.lastSfxTime = now;
+        } else if (events.collisions > 0 && Math.random() < 0.05) { 
+            // Reduced collision chance (10% -> 5%) to reduce clutter
             const id = this.sfx['collision']?.play();
             this.sfx['collision']?.rate(0.8 + Math.random() * 0.4, id);
+            this.lastSfxTime = now;
         }
     }
 }
