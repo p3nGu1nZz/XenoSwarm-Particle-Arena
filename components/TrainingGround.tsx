@@ -3,7 +3,7 @@ import { ColonyDNA, PlayerId } from '../types';
 import SimulationView from './SimulationView';
 import MatrixEditor from './MatrixEditor';
 import Button from './Button';
-import { ArrowLeft, Play, Sword, Eye, EyeOff, Keyboard, Activity } from 'lucide-react';
+import { ArrowLeft, Play, Sword, Eye, EyeOff, Keyboard, Activity, Microscope } from 'lucide-react';
 
 interface Props {
   player: PlayerId;
@@ -90,67 +90,75 @@ const TrainingGround: React.FC<Props> = ({
 
   const handleMatrixUpdate = (newDNA: ColonyDNA) => {
     onUpdateDNA(newDNA);
-    // Optionally reset selection when DNA changes heavily, 
-    // but preserving it allows seeing how the SAME index particle behaves (even if it's a new instance)
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#050505]">
-      {/* Sidebar Controls */}
-      <div className="w-[500px] flex flex-col p-6 border-r border-white/5 bg-[#0a0a0a] z-20 overflow-y-auto">
-        <div className="mb-8">
-          <Button variant="ghost" size="sm" onClick={onBack} icon={<ArrowLeft size={16}/>} className="mb-4">
-            Exit to Menu
+    <div className="flex h-screen w-full bg-[#050505] overflow-hidden">
+      {/* Sidebar Controls - Glassmorphism Panel */}
+      <div className="w-[500px] flex flex-col p-6 border-r border-white/10 bg-neutral-900/60 backdrop-blur-xl z-20 overflow-y-auto relative shadow-[10px_0_30px_rgba(0,0,0,0.5)]">
+        {/* Header */}
+        <div className="mb-6 pb-6 border-b border-white/10">
+          <Button variant="ghost" size="sm" onClick={onBack} icon={<ArrowLeft size={14}/>} className="mb-4 text-neutral-400">
+            Back to Hub
           </Button>
-          <h2 className="text-4xl font-bold brand-font mb-2" style={{ color: playerColor }}>
-            {playerLabel}
-          </h2>
-          <div className="flex items-center gap-2">
-             <div className={`w-3 h-3 rounded-full ${player === 'player1' ? 'bg-cyan-500' : 'bg-orange-500'}`}></div>
+          <div className="flex items-center gap-3">
+             <div 
+               className="w-10 h-10 rounded flex items-center justify-center border border-white/20 shadow-[0_0_15px_rgba(0,0,0,0.5)]"
+               style={{ backgroundColor: `${playerColor}20`, borderColor: playerColor }}
+             >
+                 <Microscope size={24} style={{ color: playerColor }} />
+             </div>
+             <div>
+                <h2 className="text-3xl font-bold brand-font text-white leading-none">
+                    {playerLabel}
+                </h2>
+                <span className="text-xs text-neutral-500 uppercase tracking-widest font-mono">Laboratory Access Granted</span>
+             </div>
+          </div>
+          
+          <div className="mt-6">
+             <label className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold mb-1 block">Colony Designation</label>
              <input 
                type="text" 
                value={dna.name} 
                onChange={(e) => onUpdateDNA({...dna, name: e.target.value})}
-               className="bg-transparent border-b border-neutral-700 text-xl font-bold focus:outline-none focus:border-white w-full"
+               className="bg-black/30 border border-white/10 rounded px-3 py-2 text-lg font-bold text-white focus:outline-none focus:border-white/40 w-full transition-colors font-mono"
              />
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col gap-8">
+        <div className="flex-1 flex flex-col gap-6">
            <MatrixEditor dna={dna} onChange={handleMatrixUpdate} playerColor={playerColor} />
            
-           <div className="mt-auto pt-6 border-t border-white/5">
-             <div className="flex gap-2 mb-4">
+           <div className="mt-auto pt-6 border-t border-white/10">
+             <div className="grid grid-cols-2 gap-3 mb-4">
                 <Button 
                    variant="secondary" 
                    size="sm" 
-                   className="flex-1"
                    onClick={() => setShowForces(!showForces)}
-                   icon={showForces ? <EyeOff size={16}/> : <Eye size={16}/>}
+                   icon={showForces ? <EyeOff size={14}/> : <Eye size={14}/>}
                 >
-                   {showForces ? 'Hide Forces (V)' : 'Show Forces (V)'}
+                   {showForces ? 'Hide Forces' : 'View Forces'}
                 </Button>
                 <Button 
                    variant="secondary" 
                    size="sm" 
-                   className="flex-1"
                    onClick={() => setShowTrails(!showTrails)}
-                   icon={<Activity size={16}/>}
+                   icon={<Activity size={14}/>}
                 >
-                   {showTrails ? 'Hide Trails (T)' : 'Show Trails (T)'}
+                   {showTrails ? 'Hide Trails' : 'Trace Trails'}
                 </Button>
              </div>
 
-             <div className="bg-neutral-900/50 p-4 rounded-lg text-sm text-neutral-400 mb-6">
-                <div className="flex items-center gap-2 mb-2 text-white/70 uppercase text-xs font-bold tracking-wider">
-                  <Keyboard size={14} /> Shortcuts
+             <div className="bg-black/40 border border-white/5 p-4 rounded text-sm text-neutral-400 mb-6">
+                <div className="flex items-center gap-2 mb-3 text-white/60 uppercase text-[10px] font-bold tracking-widest">
+                  <Keyboard size={12} /> System Overrides
                 </div>
-                <div className="grid grid-cols-2 gap-y-1 text-xs font-mono">
-                  <span className="text-neutral-500">Toggle Forces</span> <span className="text-white text-right">V</span>
-                  <span className="text-neutral-500">Toggle Trails</span> <span className="text-white text-right">T</span>
-                  <span className="text-neutral-500">Reset Sim</span> <span className="text-white text-right">R</span>
-                  <span className="text-neutral-500">Select Particle</span> <span className="text-white text-right">Arrows</span>
-                  <span className="text-neutral-500">Deselect</span> <span className="text-white text-right">Esc</span>
+                <div className="grid grid-cols-2 gap-y-2 text-[10px] font-mono uppercase">
+                  <span className="text-neutral-500">Toggle Forces</span> <span className="text-white text-right font-bold">V</span>
+                  <span className="text-neutral-500">Toggle Trails</span> <span className="text-white text-right font-bold">T</span>
+                  <span className="text-neutral-500">Reboot Sim</span> <span className="text-white text-right font-bold">R</span>
+                  <span className="text-neutral-500">Select Unit</span> <span className="text-white text-right font-bold">ARROWS</span>
                 </div>
              </div>
              
@@ -161,7 +169,7 @@ const TrainingGround: React.FC<Props> = ({
                onClick={onReady}
                icon={isReady ? <Sword size={20}/> : <Play size={20} />}
              >
-               {isReady ? 'Ready for Battle' : 'Lock In Colony'}
+               {isReady ? 'Colony Synced' : 'Save & Lock Colony'}
              </Button>
            </div>
         </div>
@@ -169,12 +177,13 @@ const TrainingGround: React.FC<Props> = ({
 
       {/* Main Simulation Area */}
       <div className="flex-1 relative flex items-center justify-center p-8 bg-neutral-950">
-        <div className="absolute top-8 left-8 z-10 flex gap-4">
-           <span className="bg-white/5 text-white/50 px-3 py-1 rounded text-xs font-mono uppercase tracking-widest border border-white/5">
-             Simulation Mode: Training
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(50,50,50,0.1),transparent_70%)] pointer-events-none"></div>
+        <div className="absolute top-8 left-8 z-10">
+           <span className="bg-black/60 text-cyan-400 px-4 py-1.5 rounded-full text-xs font-mono uppercase tracking-widest border border-cyan-500/20 backdrop-blur shadow-lg">
+             Simulation Environment // Training
            </span>
         </div>
-        <div className="w-full h-full max-w-6xl max-h-[800px]">
+        <div className="w-full h-full max-w-6xl max-h-[800px] shadow-2xl rounded-xl overflow-hidden border border-white/5">
            <SimulationView 
              key={simKey} // Force remount on reset
              mode="training" 

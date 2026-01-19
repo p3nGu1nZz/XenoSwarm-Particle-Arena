@@ -26,21 +26,42 @@ const MatrixEditor: React.FC<Props> = ({ dna, onChange, playerColor }) => {
   };
 
   const MatrixInput = ({ val, row, col, type, label }: any) => {
-    // Helper to visualize force color
-    const getBgColor = (v: number) => {
-      if (v > 0) return `rgba(0, 255, 0, ${Math.abs(v) * 0.3})`; // Green attract
-      if (v < 0) return `rgba(255, 0, 0, ${Math.abs(v) * 0.3})`; // Red repel
-      return 'transparent';
-    };
+    const isPositive = val > 0;
+    const isZero = val === 0;
+    const intensity = Math.abs(val);
+    
+    // Neon palette logic
+    let color = isZero ? '#444' : (isPositive ? '#00f3ff' : '#ff0055');
+    let shadow = isZero ? 'none' : `0 0 ${intensity * 10}px ${color}`;
 
     return (
-      <div className="flex flex-col items-center">
-        <div 
-          className="w-12 h-12 rounded flex items-center justify-center border border-white/20 mb-1 transition-colors"
-          style={{ backgroundColor: getBgColor(val) }}
-        >
-          <span className="text-xs font-bold font-mono">{val.toFixed(2)}</span>
+      <div className="flex flex-col items-center group relative p-3 bg-white/5 border border-white/5 hover:border-white/20 transition-all clip-corner-sm">
+        
+        {/* Visualizer Bar */}
+        <div className="relative w-full h-24 bg-black/50 border border-white/10 mb-3 flex items-end justify-center overflow-hidden">
+            <div 
+                className="w-full transition-all duration-200 relative z-10"
+                style={{
+                    backgroundColor: color,
+                    height: `${Math.abs(val) * 100}%`,
+                    opacity: 0.6 + (intensity * 0.4),
+                    boxShadow: shadow
+                }}
+            >
+                {/* Scanline texture inside bar */}
+                <div className="absolute inset-0 bg-[linear-gradient(black_1px,transparent_1px)] bg-[size:100%_4px] opacity-20"></div>
+            </div>
+            
+            {/* Zero Line */}
+            <div className="absolute bottom-0 w-full h-px bg-white/20"></div>
+            
+            <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+                 <span className="text-xs font-bold mono-font drop-shadow-md text-white">
+                    {val > 0 ? '+' : ''}{val.toFixed(2)}
+                 </span>
+            </div>
         </div>
+
         <input 
           type="range" 
           min="-1" 
@@ -48,29 +69,41 @@ const MatrixEditor: React.FC<Props> = ({ dna, onChange, playerColor }) => {
           step="0.05" 
           value={val}
           onChange={(e) => handleMatrixChange(type, row, col, parseFloat(e.target.value))}
-          className="w-20 accent-cyan-500 h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-1 cursor-pointer opacity-80 hover:opacity-100"
+          style={{ accentColor: color }} 
         />
-        <span className="text-[10px] text-neutral-500 mt-1 text-center leading-tight">
+        
+        <span className="text-[10px] text-neutral-500 mt-2 text-center mono-font uppercase tracking-widest group-hover:text-cyan-400 transition-colors">
           {label}
         </span>
       </div>
     );
   };
 
-  const labels = ["Soldier", "Worker"];
+  const labels = ["Unit A", "Unit B"];
   
   return (
-    <div className="bg-neutral-900/80 backdrop-blur border border-white/10 p-6 rounded-xl flex flex-col gap-6 w-full max-w-md">
-      <div>
-        <h3 className="text-xl font-bold mb-1 brand-font" style={{ color: playerColor }}>Colony Engineering</h3>
-        <p className="text-neutral-400 text-sm">Design the DNA of your swarm.</p>
+    <div className="glass-panel p-6 clip-tech-border flex flex-col gap-6 w-full max-w-md shadow-[0_0_50px_rgba(0,0,0,0.5)] border-l-4" style={{ borderLeftColor: playerColor }}>
+      <div className="border-b border-white/10 pb-4 flex justify-between items-end">
+        <div>
+            <h3 className="text-xl font-bold brand-font tracking-wide text-white drop-shadow-lg">
+                DNA MATRIX
+            </h3>
+            <p className="text-neutral-500 text-[10px] uppercase tracking-[0.2em] mt-1 mono-font">Force Vector Configuration</p>
+        </div>
+        <div className="text-right">
+             <div className="text-[10px] text-neutral-600 mono-font">STATUS</div>
+             <div className="text-xs text-emerald-400 font-bold animate-pulse">ACTIVE</div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-2 gap-6">
         {/* Internal Matrix */}
         <div className="space-y-4">
-          <h4 className="text-sm font-bold text-center border-b border-white/10 pb-2">Internal (Self)</h4>
-          <div className="grid grid-cols-2 gap-4">
+          <h4 className="text-[10px] uppercase font-bold text-center tracking-widest text-cyan-400 bg-cyan-900/10 py-2 border-b border-cyan-500/30">
+            Internal Bonds
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
             {dna.internalMatrix.map((rowArr, r) => (
               rowArr.map((val, c) => (
                 <MatrixInput 
@@ -79,7 +112,7 @@ const MatrixEditor: React.FC<Props> = ({ dna, onChange, playerColor }) => {
                   row={r} 
                   col={c} 
                   type="internal"
-                  label={`${labels[r]} -> ${labels[c]}`}
+                  label={`${labels[r]}→${labels[c]}`}
                 />
               ))
             ))}
@@ -88,8 +121,10 @@ const MatrixEditor: React.FC<Props> = ({ dna, onChange, playerColor }) => {
 
         {/* External Matrix */}
         <div className="space-y-4">
-          <h4 className="text-sm font-bold text-center border-b border-white/10 pb-2">External (Enemy)</h4>
-          <div className="grid grid-cols-2 gap-4">
+          <h4 className="text-[10px] uppercase font-bold text-center tracking-widest text-pink-400 bg-pink-900/10 py-2 border-b border-pink-500/30">
+            Xeno Relations
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
             {dna.externalMatrix.map((rowArr, r) => (
               rowArr.map((val, c) => (
                 <MatrixInput 
@@ -98,7 +133,7 @@ const MatrixEditor: React.FC<Props> = ({ dna, onChange, playerColor }) => {
                   row={r} 
                   col={c} 
                   type="external"
-                  label={`${labels[r]} -> Enemy ${labels[c]}`}
+                  label={`${labels[r]}→Xeno`}
                 />
               ))
             ))}

@@ -5,32 +5,164 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>XenoSwarm: Particle Arena</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --color-neon-cyan: #00f3ff;
+        --color-neon-pink: #ff0055;
+        --color-neon-purple: #bc13fe;
+        --color-neon-yellow: #fcee0a;
+        --bg-dark: #020203;
+        --glass-border: rgba(255, 255, 255, 0.1);
+      }
+      
       body {
         font-family: 'Rajdhani', sans-serif;
-        background-color: #050505;
+        background-color: var(--bg-dark);
         color: #e0e0e0;
-        overflow: hidden; /* Prevent scrolling for immersive feel */
+        overflow: hidden;
       }
+
       h1, h2, h3, .brand-font {
         font-family: 'Orbitron', sans-serif;
       }
-      /* Custom scrollbar for panels */
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+      
+      .mono-font {
+        font-family: 'Share Tech Mono', monospace;
       }
-      ::-webkit-scrollbar-track {
-        background: #111;
+
+      /* CRT Scanline Effect - Subtle & High Def */
+      .scanlines {
+        position: relative;
+        overflow: hidden;
+      }
+      .scanlines::after {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+        z-index: 9999;
+        background-size: 100% 3px, 4px 100%;
+        pointer-events: none;
+        opacity: 0.6;
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+        background: #000;
       }
       ::-webkit-scrollbar-thumb {
         background: #333;
-        border-radius: 3px;
+        border-radius: 2px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #555;
+        background: var(--color-neon-cyan);
+        box-shadow: 0 0 10px var(--color-neon-cyan);
       }
+
+      /* Range Slider Customization */
+      input[type=range] {
+        -webkit-appearance: none;
+        background: transparent;
+      }
+      input[type=range]:focus {
+        outline: none;
+      }
+      input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px;
+        width: 16px;
+        border-radius: 0;
+        background: #fff;
+        cursor: pointer;
+        margin-top: -6px;
+        box-shadow: 0 0 10px rgba(255,255,255,0.8);
+        clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); /* Diamond */
+        transform: scale(1);
+        transition: transform 0.1s;
+      }
+      input[type=range]::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
+      }
+      input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 4px;
+        cursor: pointer;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.1);
+      }
+
+      /* Utilities */
+      .text-glow-cyan { text-shadow: 0 0 10px var(--color-neon-cyan); }
+      .text-glow-pink { text-shadow: 0 0 10px var(--color-neon-pink); }
+      .text-glow-white { text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+
+      .box-glow-cyan { box-shadow: 0 0 15px rgba(0, 243, 255, 0.15), inset 0 0 10px rgba(0, 243, 255, 0.05); }
+      .box-glow-pink { box-shadow: 0 0 15px rgba(255, 0, 85, 0.15), inset 0 0 10px rgba(255, 0, 85, 0.05); }
+
+      .glass-panel {
+        background: rgba(5, 5, 8, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid var(--glass-border);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+      }
+
+      /* Clip Paths */
+      .clip-tech-border {
+        clip-path: polygon(
+          0 0, 
+          20px 0, 
+          20px 4px, 
+          calc(100% - 20px) 4px, 
+          calc(100% - 20px) 0, 
+          100% 0, 
+          100% calc(100% - 20px), 
+          calc(100% - 4px) calc(100% - 20px), 
+          calc(100% - 4px) 100%, 
+          20px 100%, 
+          20px calc(100% - 4px), 
+          0 calc(100% - 4px)
+        );
+      }
+
+      /* Animations */
+      @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+      }
+      .animate-float { animation: float 4s ease-in-out infinite; }
+      
+      @keyframes pulse-glow {
+        0%, 100% { opacity: 0.5; filter: brightness(1); }
+        50% { opacity: 1; filter: brightness(1.3); }
+      }
+      .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+      @keyframes glitch-text {
+        0% { transform: translate(0); }
+        20% { transform: translate(-2px, 2px); }
+        40% { transform: translate(-2px, -2px); }
+        60% { transform: translate(2px, 2px); }
+        80% { transform: translate(2px, -2px); }
+        100% { transform: translate(0); }
+      }
+      .animate-glitch { animation: glitch-text 0.3s cubic-bezier(.25, .46, .45, .94) both infinite; }
+
+      @keyframes grid-move {
+        0% { transform: perspective(1000px) rotateX(60deg) translateY(0); }
+        100% { transform: perspective(1000px) rotateX(60deg) translateY(50px); }
+      }
+      .perspective-grid {
+        transform: perspective(1000px) rotateX(60deg);
+      }
+
     </style>
   <script type="importmap">
 {
@@ -45,7 +177,7 @@
 }
 </script>
 </head>
-  <body>
+  <body class="scanlines bg-[#020203]">
     <div id="root"></div>
   </body>
 </html>

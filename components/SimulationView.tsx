@@ -9,19 +9,56 @@ interface Props {
   mode: 'training' | 'arena';
   player1DNA: ColonyDNA;
   player2DNA?: ColonyDNA;
-  onStatsUpdate?: (p1: number, p2: number, p1Escaped: number, p2Escaped: number, fps: number) => void;
+  onStatsUpdate?: (p1: number, p2: number, p1Escaped: number, p2Escaped: number, fps: number, centroidDist: number, avgSpeed: number) => void;
   showVectors?: boolean; 
   showTrails?: boolean;
-  // Controlled selection props
   selectedParticleIdx?: number | null;
   onSelectParticle?: (idx: number | null) => void;
   arenaConfig?: ArenaConfig;
   paused?: boolean;
-  
-  // Tactical Overrides (Real-time AI)
   p1Retreat?: boolean;
   p2Retreat?: boolean;
+  p1Aggressive?: boolean;
+  p2Aggressive?: boolean;
 }
+
+// SPRITE CACHE
+const particleSprites: Record<string, HTMLCanvasElement> = {};
+
+const getParticleSprite = (color: string, radius: number): HTMLCanvasElement => {
+  const key = `${color}-${radius}`;
+  if (particleSprites[key]) return particleSprites[key];
+
+  const canvas = document.createElement('canvas');
+  const size = radius * 8; 
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const center = size / 2;
+
+  // Outer Soft Glow
+  const grad = ctx.createRadialGradient(center, center, radius, center, center, radius * 4);
+  grad.addColorStop(0, color);
+  grad.addColorStop(1, 'transparent'); 
+
+  ctx.globalAlpha = 0.4;
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(center, center, radius * 4, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Inner Core
+  ctx.globalAlpha = 1.0;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(center, center, radius * 0.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  particleSprites[key] = canvas;
+  return canvas;
+};
 
 const SimulationView: React.FC<Props> = ({ 
   mode, 
@@ -35,28 +72,38 @@ const SimulationView: React.FC<Props> = ({
   arenaConfig = DEFAULT_ARENA_CONFIG,
   paused = false,
   p1Retreat = false,
-  p2Retreat = false
+  p2Retreat = false,
+  p1Aggressive = false,
+  p2Aggressive = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const trailCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  
   const engineRef = useRef<SimulationEngine | null>(null);
   const reqRef = useRef<number>(0);
   const frameCountRef = useRef(0);
   const lastTimeRef = useRef(0);
   
-  // Interaction State (Local fallback for uncontrolled mode)
   const [localSelectedIdx, setLocalSelectedIdx] = useState<number | null>(null);
-
-  // Determine active selection (Controlled vs Uncontrolled)
   const isControlled = onSelectParticle !== undefined;
   const activeSelectedIdx = isControlled ? (propSelectedIdx ?? null) : localSelectedIdx;
 
   useEffect(() => {
-    // Init Engine
-    const maxP = 2000; // Increased buffer for higher particle counts
+    for (const key in particleSprites) delete particleSprites[key];
+
+    if (!trailCanvasRef.current) {
+        trailCanvasRef.current = document.createElement('canvas');
+        trailCanvasRef.current.width = CANVAS_WIDTH;
+        trailCanvasRef.current.height = CANVAS_HEIGHT;
+    } else {
+        const tCtx = trailCanvasRef.current.getContext('2d');
+        tCtx?.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
+    const maxP = 2500; 
     const engine = new SimulationEngine(maxP);
     engineRef.current = engine;
 
-    // Apply Config
     engine.setConfig(arenaConfig);
 
     if (mode === 'training') {
@@ -65,12 +112,10 @@ const SimulationView: React.FC<Props> = ({
       engine.init(player1DNA, player2DNA, arenaConfig.particleCount, arenaConfig.particleCount); 
     }
 
-    // Reset local selection on DNA change only if uncontrolled
     if (!isControlled) {
       setLocalSelectedIdx(null);
     }
 
-    // Ensure audio context is ready (user interaction usually required)
     const unlockAudio = () => {
         if (Howler && Howler.ctx && Howler.ctx.state === 'suspended') {
             Howler.ctx.resume();
@@ -83,16 +128,14 @@ const SimulationView: React.FC<Props> = ({
       if (reqRef.current) cancelAnimationFrame(reqRef.current);
       document.removeEventListener('click', unlockAudio);
     };
-  }, [mode, player1DNA, player2DNA, isControlled, arenaConfig]); // Re-init on config change
+  }, [mode, player1DNA, player2DNA, isControlled, arenaConfig]);
 
-  // Apply Real-time Tactics (Does not re-init engine)
   useEffect(() => {
     if (engineRef.current && mode === 'arena') {
-        engineRef.current.setTactics(p1Retreat, p2Retreat);
+        engineRef.current.setTactics(p1Retreat, p2Retreat, p1Aggressive, p2Aggressive);
     }
-  }, [p1Retreat, p2Retreat, mode]);
+  }, [p1Retreat, p2Retreat, p1Aggressive, p2Aggressive, mode]);
 
-  // Click Handler for Selection
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!engineRef.current || mode !== 'training') return;
     
@@ -105,7 +148,7 @@ const SimulationView: React.FC<Props> = ({
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
     
-    const idx = engineRef.current.findParticleAt(x, y, 30); // 30px click radius
+    const idx = engineRef.current.findParticleAt(x, y, 30); 
     const targetIdx = idx !== -1 ? idx : null;
 
     if (isControlled) {
@@ -118,172 +161,113 @@ const SimulationView: React.FC<Props> = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d', { alpha: false });
+    const ctx = canvas.getContext('2d', { alpha: false }); 
     if (!ctx) return;
+
+    // Cache Background
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = CANVAS_WIDTH;
+    bgCanvas.height = CANVAS_HEIGHT;
+    const bgCtx = bgCanvas.getContext('2d');
+    if (bgCtx) {
+        bgCtx.fillStyle = '#020203';
+        bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        
+        // Hex Grid
+        bgCtx.strokeStyle = '#0a0a0f';
+        bgCtx.lineWidth = 2;
+        const hexSize = 60;
+        
+        // Simple grid for performance
+        bgCtx.beginPath();
+        for(let x=0; x<=CANVAS_WIDTH; x+=hexSize) {
+           bgCtx.moveTo(x, 0);
+           bgCtx.lineTo(x, CANVAS_HEIGHT);
+        }
+        for(let y=0; y<=CANVAS_HEIGHT; y+=hexSize) {
+           bgCtx.moveTo(0, y);
+           bgCtx.lineTo(CANVAS_WIDTH, y);
+        }
+        bgCtx.stroke();
+    }
 
     const render = (time: number) => {
       const engine = engineRef.current;
       if (!engine) return;
 
       if (!paused) {
-        // Update Physics & Trails
         engine.update();
         engine.updateTrails();
-        
-        if (mode === 'arena') {
-          engine.updateBattleLogic();
-        }
-
-        // --- SOUND TRIGGER ---
-        // Pass the events accumulated in this frame to the sound manager
+        if (mode === 'arena') engine.updateBattleLogic();
         soundManager.playBatch(engine.frameEvents);
       }
 
-      // Draw Background
-      ctx.fillStyle = '#050505';
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.drawImage(bgCanvas, 0, 0);
 
-      // ARENA BOUNDARY WARNING
       if (mode === 'arena') {
-         // Draw solid boundary to represent walls
-         ctx.strokeStyle = '#ffffff';
-         ctx.lineWidth = 2;
-         ctx.globalAlpha = 0.2;
-         ctx.strokeRect(1, 1, CANVAS_WIDTH - 2, CANVAS_HEIGHT - 2);
-         ctx.globalAlpha = 1.0;
+         ctx.strokeStyle = '#222';
+         ctx.lineWidth = 4;
+         ctx.strokeRect(2, 2, CANVAS_WIDTH - 4, CANVAS_HEIGHT - 4);
       }
 
-      // Glow effect for particles
-      ctx.globalCompositeOperation = 'screen';
-
+      const count = engine.count;
       const pos = engine.positions;
-      const vel = engine.velocities;
       const owners = engine.owners;
       const types = engine.types;
-      const count = engine.count;
       const colors = engine.colors; 
-      const forces = engine.forces;
       const history = engine.trailHistory;
       const stride = TRAIL_LENGTH * 2;
 
-      // 1. Draw Trails (Dynamic Color per Particle)
-      if (showTrails) {
-         ctx.lineWidth = 1;
-         
-         // Cache parsed RGB values for the current frame
-         const colorCache: Record<string, {r:number, g:number, b:number}> = {};
-         for(const c of colors) {
-             if (c && !colorCache[c]) {
-                 const r = parseInt(c.slice(1, 3), 16);
-                 const g = parseInt(c.slice(3, 5), 16);
-                 const b = parseInt(c.slice(5, 7), 16);
-                 colorCache[c] = {r, g, b};
-             }
-         }
+      if (showTrails && trailCanvasRef.current) {
+         const tCtx = trailCanvasRef.current.getContext('2d');
+         if (tCtx) {
+             tCtx.globalCompositeOperation = 'source-over';
+             tCtx.fillStyle = 'rgba(2, 2, 3, 0.2)'; 
+             tCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-         for (let i = 0; i < count; i++) {
-             // Skip selected particle (drawn individually later with higher opacity)
-             if (i === activeSelectedIdx) continue;
+             tCtx.globalCompositeOperation = 'lighter';
+             tCtx.lineWidth = 1.5;
 
-             const owner = owners[i];
-             const type = types[i];
-             
-             let colorIdx = 0;
-             if (owner === 1) colorIdx = type;
-             else if (owner === 2) colorIdx = 2 + type;
-             else colorIdx = 4;
+             const colorCache: string[] = [];
+             for(const c of colors) colorCache.push(c || '#fff');
 
-             const baseColorStr = colors[colorIdx] || '#ffffff';
-             const baseRGB = colorCache[baseColorStr] || {r: 255, g: 255, b: 255};
+             let lastColorIdx = -1;
 
-             const vx = vel[i * 2];
-             const vy = vel[i * 2 + 1];
-             const speedSq = vx*vx + vy*vy;
-             
-             // Optimization: Skip very slow particles
-             if (speedSq < 0.2) continue;
+             for (let i = 0; i < count; i++) {
+                 const baseIdx = i * stride;
+                 const currX = history[baseIdx + (TRAIL_LENGTH-1)*2];
+                 const currY = history[baseIdx + (TRAIL_LENGTH-1)*2 + 1];
+                 const prevX = history[baseIdx + (TRAIL_LENGTH-2)*2];
+                 const prevY = history[baseIdx + (TRAIL_LENGTH-2)*2 + 1];
 
-             // Determine Opacity based on Speed
-             let alpha = 0.3; 
-             if (speedSq > 9.0) alpha = 0.7;      // Fast
-             else if (speedSq > 2.25) alpha = 0.5; // Medium
+                 if (Math.abs(currX - prevX) < 0.1 || Math.abs(currX - prevX) > 100) continue;
 
-             // Color Variation based on Direction and Speed
-             const angle = Math.atan2(vy, vx); 
-             const shift = 40; // Intensity of color shift
-             const speedBoost = Math.min(1.3, 1.0 + speedSq * 0.02); // Brighter if faster
-             
-             // Modulate RGB channels with phase-shifted sines of the angle
-             const r = Math.max(0, Math.min(255, (baseRGB.r + Math.sin(angle) * shift) * speedBoost));
-             const g = Math.max(0, Math.min(255, (baseRGB.g + Math.sin(angle + 2.09) * shift) * speedBoost)); // +120 deg
-             const b = Math.max(0, Math.min(255, (baseRGB.b + Math.sin(angle + 4.18) * shift) * speedBoost)); // +240 deg
+                 const owner = owners[i];
+                 const type = types[i];
+                 let colorIdx = 0;
+                 if (owner === 1) colorIdx = type;
+                 else if (owner === 2) colorIdx = 2 + type;
+                 else colorIdx = 4;
 
-             ctx.strokeStyle = `rgba(${r|0}, ${g|0}, ${b|0}, ${alpha})`;
-             
-             ctx.beginPath();
-             const baseIdx = i * stride;
-             let currX = history[baseIdx];
-             let currY = history[baseIdx + 1];
-             ctx.moveTo(currX, currY);
-
-             let hasPath = false;
-             for (let t = 1; t < TRAIL_LENGTH; t++) {
-                 const nextX = history[baseIdx + t*2];
-                 const nextY = history[baseIdx + t*2 + 1];
-                 
-                 // Wrap detection
-                 if (Math.abs(nextX - currX) > CANVAS_WIDTH / 2 || Math.abs(nextY - currY) > CANVAS_HEIGHT / 2) {
-                     ctx.moveTo(nextX, nextY);
-                 } else {
-                     ctx.lineTo(nextX, nextY);
-                     hasPath = true;
+                 if (colorIdx !== lastColorIdx) {
+                     if (lastColorIdx !== -1) tCtx.stroke(); 
+                     tCtx.strokeStyle = colorCache[colorIdx];
+                     tCtx.beginPath();
+                     lastColorIdx = colorIdx;
                  }
-                 
-                 currX = nextX;
-                 currY = nextY;
+
+                 tCtx.moveTo(prevX, prevY);
+                 tCtx.lineTo(currX, currY);
              }
+             if (lastColorIdx !== -1) tCtx.stroke();
              
-             if (hasPath) ctx.stroke();
+             ctx.globalCompositeOperation = 'screen'; 
+             ctx.drawImage(trailCanvasRef.current, 0, 0);
          }
       }
 
-      // Always draw trail for selected particle with higher visibility
-      if (activeSelectedIdx !== null && activeSelectedIdx < count) {
-          ctx.lineWidth = 2;
-          const i = activeSelectedIdx;
-          const owner = owners[i];
-          const type = types[i];
-          let colorIdx = 0;
-          if (owner === 1) colorIdx = type;
-          else if (owner === 2) colorIdx = 2 + type;
-          else colorIdx = 4;
-          
-          ctx.strokeStyle = colors[colorIdx] || '#fff';
-          ctx.globalAlpha = 0.8;
-          ctx.beginPath();
-          
-          const baseIdx = i * stride;
-          let currX = history[baseIdx];
-          let currY = history[baseIdx + 1];
-          ctx.moveTo(currX, currY);
-          
-          for (let t = 1; t < TRAIL_LENGTH; t++) {
-             const nextX = history[baseIdx + t*2];
-             const nextY = history[baseIdx + t*2 + 1];
-             if (Math.abs(nextX - currX) > CANVAS_WIDTH / 2 || Math.abs(nextY - currY) > CANVAS_HEIGHT / 2) {
-                 ctx.moveTo(nextX, nextY);
-             } else {
-                 ctx.lineTo(nextX, nextY);
-             }
-             currX = nextX;
-             currY = nextY;
-          }
-          ctx.stroke();
-          ctx.globalAlpha = 1.0;
-          ctx.lineWidth = 1;
-      }
+      ctx.globalCompositeOperation = 'screen';
 
-      // 2. Draw Particles
       for (let i = 0; i < count; i++) {
         const owner = owners[i];
         const type = types[i];
@@ -293,72 +277,89 @@ const SimulationView: React.FC<Props> = ({
         else if (owner === 2) colorIdx = 2 + type;
         else colorIdx = 4;
 
-        ctx.fillStyle = colors[colorIdx] || '#fff';
-        
-        const px = pos[i * 2];
-        const py = pos[i * 2 + 1];
-
-        ctx.beginPath();
+        const color = colors[colorIdx] || '#fff';
         const radius = type === 0 ? 3 : 2; 
-        ctx.arc(px, py, radius, 0, Math.PI * 2);
-        ctx.fill();
 
-        // Vector Overlay
-        if (showVectors) {
-           const fx = forces[i*2];
-           const fy = forces[i*2+1];
-           const mag = Math.sqrt(fx*fx + fy*fy);
-           if (mag > 0.05) {
-             ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(mag * 0.5, 0.3)})`;
-             ctx.lineWidth = 1;
-             ctx.beginPath();
-             ctx.moveTo(px, py);
-             ctx.lineTo(px + fx * 20, py + fy * 20); 
-             ctx.stroke();
-           }
-        }
+        const sprite = getParticleSprite(color, radius);
+        const px = (pos[i * 2] | 0);
+        const py = (pos[i * 2 + 1] | 0);
+        const offset = radius * 4; 
+
+        ctx.drawImage(sprite, px - offset, py - offset);
+      }
+      
+      if (showVectors) {
+         ctx.globalCompositeOperation = 'source-over';
+         const forces = engine.forces;
+         for (let i = 0; i < count; i++) {
+            const px = pos[i * 2];
+            const py = pos[i * 2 + 1];
+            const fx = forces[i*2];
+            const fy = forces[i*2+1];
+            const mag = Math.sqrt(fx*fx + fy*fy);
+            if (mag > 0.05) {
+                ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(mag * 0.5, 0.3)})`;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(px, py);
+                ctx.lineTo(px + fx * 20, py + fy * 20); 
+                ctx.stroke();
+            }
+         }
       }
 
       ctx.globalCompositeOperation = 'source-over';
 
-      // Draw Selected Particle Debug Info
       if (activeSelectedIdx !== null && activeSelectedIdx < count) {
           const debugInfo = engine.inspectParticle(activeSelectedIdx);
           if (debugInfo) {
              const { x, y, netFx, netFy, interactions } = debugInfo;
              
-             // Highlight Selection
-             ctx.strokeStyle = '#ffff00';
+             ctx.strokeStyle = '#00f3ff';
              ctx.lineWidth = 2;
              ctx.beginPath();
-             ctx.arc(x, y, 8, 0, Math.PI * 2);
+             ctx.arc(x, y, 16, 0, Math.PI * 2); 
              ctx.stroke();
+             
+             ctx.setLineDash([4, 4]);
+             ctx.beginPath();
+             ctx.moveTo(x-20, y); ctx.lineTo(x+20, y);
+             ctx.moveTo(x, y-20); ctx.lineTo(x, y+20);
+             ctx.stroke();
+             ctx.setLineDash([]);
 
-             // Draw Net Force
-             ctx.strokeStyle = '#ffff00';
-             ctx.lineWidth = 3;
+             ctx.strokeStyle = '#00f3ff';
+             ctx.lineWidth = 2;
              ctx.beginPath();
              ctx.moveTo(x, y);
-             ctx.lineTo(x + netFx * 30, y + netFy * 30);
+             ctx.lineTo(x + netFx * 40, y + netFy * 40);
              ctx.stroke();
 
-             // Draw Interactions
+             ctx.globalAlpha = 0.4;
              interactions.forEach(inter => {
-                ctx.strokeStyle = inter.isRepulsion ? 'rgba(255, 0, 0, 0.4)' : 'rgba(0, 255, 0, 0.4)';
-                ctx.lineWidth = Math.abs(inter.force) * 3; 
+                ctx.strokeStyle = inter.isRepulsion ? '#ff0055' : '#00f3ff';
+                ctx.lineWidth = Math.min(Math.abs(inter.force) * 4, 3); 
                 ctx.beginPath();
                 ctx.moveTo(x, y);
                 ctx.lineTo(x + inter.dx, y + inter.dy);
                 ctx.stroke();
              });
+             ctx.globalAlpha = 1.0;
           }
       }
 
-      // FPS & Stats
       frameCountRef.current++;
       if (time - lastTimeRef.current >= 1000) {
         const stats = engine.getStats();
-        onStatsUpdate?.(stats.p1, stats.p2, stats.p1Escaped, stats.p2Escaped, frameCountRef.current);
+        onStatsUpdate?.(
+            stats.p1, 
+            stats.p2, 
+            stats.p1Escaped, 
+            stats.p2Escaped, 
+            frameCountRef.current,
+            stats.centroidDist,
+            stats.avgSpeed
+        );
         frameCountRef.current = 0;
         lastTimeRef.current = time;
       }
@@ -371,32 +372,48 @@ const SimulationView: React.FC<Props> = ({
     return () => {
       if (reqRef.current) cancelAnimationFrame(reqRef.current);
     };
-  }, [mode, onStatsUpdate, showVectors, showTrails, activeSelectedIdx, arenaConfig, paused]);
+  }, [mode, onStatsUpdate, showVectors, showTrails, activeSelectedIdx, arenaConfig, paused, p1Retreat, p2Retreat, p1Aggressive, p2Aggressive]);
 
   return (
-    <div className="w-full h-full flex items-center justify-center min-h-0 min-w-0">
-       {/* Responsive Container */}
+    <div className="w-full h-full flex items-center justify-center p-2">
+       {/* Monitor Frame */}
        <div 
-         className="relative max-w-full max-h-full border border-white/10 rounded-lg overflow-hidden shadow-2xl shadow-black/50"
-         style={{ aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}` }}
+         className="relative w-full h-full overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.8)] border border-neutral-800 bg-black"
+         style={{ maxWidth: '100%', maxHeight: '100%' }}
        >
+         {/* Decoration Overlays */}
+         <div className="absolute top-4 left-4 w-16 h-16 border-l-2 border-t-2 border-cyan-500/50 rounded-tl-lg z-20 pointer-events-none"></div>
+         <div className="absolute top-4 right-4 w-16 h-16 border-r-2 border-t-2 border-cyan-500/50 rounded-tr-lg z-20 pointer-events-none"></div>
+         <div className="absolute bottom-4 left-4 w-16 h-16 border-l-2 border-b-2 border-cyan-500/50 rounded-bl-lg z-20 pointer-events-none"></div>
+         <div className="absolute bottom-4 right-4 w-16 h-16 border-r-2 border-b-2 border-cyan-500/50 rounded-br-lg z-20 pointer-events-none"></div>
+         
+         <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-1 border border-white/10 rounded-full text-[10px] mono-font text-white/50 z-20 pointer-events-none">
+             SIMULATION_FEED_LIVE
+         </div>
+
          <canvas 
            ref={canvasRef} 
            width={CANVAS_WIDTH} 
            height={CANVAS_HEIGHT}
-           className="w-full h-full block bg-neutral-950 cursor-crosshair"
+           className="w-full h-full block bg-neutral-950 cursor-crosshair relative z-10"
            onClick={handleCanvasClick}
          />
-         {/* Instructions Overlay */}
+         
          {mode === 'training' && (
-           <div className="absolute top-4 right-4 pointer-events-none text-right z-20">
-               <div className="text-[10px] text-neutral-500 uppercase tracking-widest bg-black/50 px-2 py-1 rounded backdrop-blur">
-                  {activeSelectedIdx !== null ? `Inspecting Particle #${activeSelectedIdx}` : "Click particle to inspect"}
+           <div className="absolute top-8 right-8 pointer-events-none text-right z-30">
+               <div className="text-[10px] text-cyan-400 uppercase tracking-widest bg-black/90 px-4 py-2 border border-cyan-500/50 backdrop-blur-md shadow-lg mono-font clip-tech-border">
+                  {activeSelectedIdx !== null ? `TARGET_LOCKED :: ID [${activeSelectedIdx}]` : "AWAITING_INPUT"}
                </div>
            </div>
          )}
-         {/* CRT Scanline effect overlay */}
-         <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 bg-[length:100%_2px,3px_100%] opacity-20"></div>
+
+         {/* Screen Effects */}
+         <div className="absolute inset-0 pointer-events-none z-10 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[size:100%_4px] opacity-20"></div>
+         <div className="absolute inset-0 pointer-events-none z-10"
+              style={{
+                background: 'radial-gradient(circle, transparent 50%, rgba(0,0,0,0.7) 100%)',
+              }}
+         ></div>
        </div>
     </div>
   );
