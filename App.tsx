@@ -122,7 +122,7 @@ const App: React.FC = () => {
   };
 
   // --- AI LOGIC ---
-  const handleAutoMatchComplete = async (stats: { p1: number, p2: number, winner: 'p1' | 'p2' | 'draw' }) => {
+  const handleAutoMatchComplete = async (stats: { p1: number, p2: number, winner: 'p1' | 'p2' | 'draw', duration: number }) => {
     const matchId = matchHistory.length + 1;
     
     // 1. Record History
@@ -134,7 +134,7 @@ const App: React.FC = () => {
         p2Name: gameState.player2.name,
         p1Count: stats.p1,
         p2Count: stats.p2,
-        duration: 90, // Approximate
+        duration: stats.duration, 
         environmentName: arenaConfig.environmentName
     };
     
@@ -157,8 +157,8 @@ const App: React.FC = () => {
     // Note: total initial particles per player = particleCount * 2 types
     const initialPerPlayer = oldConfig.particleCount * 2;
     
-    const p1Mutation = calculateMutationRate(p1Outcome, stats.p1, stats.p2, initialPerPlayer);
-    const p2Mutation = calculateMutationRate(p2Outcome, stats.p2, stats.p1, initialPerPlayer);
+    const p1Mutation = calculateMutationRate(p1Outcome, stats.p1, stats.p2, initialPerPlayer, stats.duration);
+    const p2Mutation = calculateMutationRate(p2Outcome, stats.p2, stats.p1, initialPerPlayer, stats.duration);
 
     try {
         const [newP1DNA, newP2DNA] = await Promise.all([

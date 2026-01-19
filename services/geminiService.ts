@@ -1,61 +1,64 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ColonyDNA, ArenaConfig } from "../types";
 
-// Helper to determine mutation intensity based on detailed match performance
+// Enhanced mutation logic considering duration and actions (implied by conversion)
 export const calculateMutationRate = (
   outcome: 'WIN' | 'LOSS' | 'DRAW',
   myCount: number,
   enemyCount: number,
-  initialTotalParticles: number
+  initialColonySize: number, // Total initial particles for this player
+  durationSeconds: number
 ): number => {
-  const myRatio = myCount / initialTotalParticles;
-  const enemyRatio = enemyCount / initialTotalParticles;
+  // 1. Calculate Conversion/Aggression Efficiency
+  // > 1.0 means we captured enemies. < 1.0 means we lost units.
+  // Example: Start 150. End 250. Ratio = 1.66 (Highly aggressive).
+  // Example: Start 150. End 30. Ratio = 0.2 (Decimated).
+  const survivalRatio = myCount / initialColonySize;
+  const enemySurvivalRatio = enemyCount / initialColonySize;
+
+  let baseRate = 0.3; // Standard drift
 
   if (outcome === 'WIN') {
-    // DOMINANT VICTORY (>75% survival, Enemy <10%)
-    // Strategy is near perfect. Minimal mutation to avoid regression.
-    if (myRatio > 0.75 && enemyRatio < 0.1) return 0.05;
-    
-    // SOLID VICTORY
-    // Good performance, standard optimization.
-    if (myRatio > 0.4) return 0.15;
-    
-    // PYRRHIC VICTORY (Won but <20% survived)
-    // We won, but the colony is too fragile. Needs defensive buffs.
-    return 0.25; 
+    // SCENARIO A: BLITZKRIEG (Quick Win < 20s)
+    // Strategy is extremely effective. Minimal changes.
+    if (durationSeconds < 20) return 0.05;
+
+    // SCENARIO B: DOMINATION (High Conversion)
+    // We captured a lot of enemies. Strategy is robust.
+    if (survivalRatio > 1.2) return 0.10;
+
+    // SCENARIO C: PYRRHIC VICTORY (Won but decimated)
+    // We won, but barely survived. Needs defense boost.
+    if (survivalRatio < 0.3) return 0.25;
+
+    // SCENARIO D: ATTRITION (Long match > 60s)
+    // We won eventually, but it took too long. Optimize for speed/aggression.
+    if (durationSeconds > 60) return 0.20;
+
+    return 0.15; // Standard Win
+  } 
+  
+  if (outcome === 'LOSS') {
+    // SCENARIO E: INSTANT WIPEOUT (< 15s)
+    // Current DNA is completely non-viable. Panic mutation.
+    if (durationSeconds < 15) return 0.90;
+
+    // SCENARIO F: CLOSE LOSS (Enemy also low)
+    // Both sides nearly wiped out. Just need a slight edge.
+    if (enemySurvivalRatio < 0.3) return 0.40;
+
+    // SCENARIO G: CRUSHED (Enemy has > 1.5x initial)
+    // Enemy farmed us. Major strategy shift needed.
+    if (enemySurvivalRatio > 1.5) return 0.70;
+
+    return 0.55; // Standard Loss
   }
-  
-  if (outcome === 'DRAW') {
-     // HIGH DENSITY STALEMATE (Both > 50%)
-     // The colonies are likely just clumping or looping safely. 
-     // Needs a "Breaker" mutation to initiate combat.
-     if (myRatio > 0.5 && enemyRatio > 0.5) return 0.60; // Increased mutation for stalemates
-     
-     // MUTUAL DESTRUCTION (Both < 20%)
-     // Both colonies are too aggressive or environment is too harsh.
-     // Needs efficiency/survival mutation.
-     if (myRatio < 0.2 && enemyRatio < 0.2) return 0.30;
-     
-     // Standard Draw
-     return 0.45; 
-  }
-  
-  // LOSS
-  // EXTINCTION (0 survivors)
-  // Current DNA is non-viable. Drastic mutation required.
-  if (myCount === 0) return 0.95; 
-  
-  // CRUSHING DEFEAT (Enemy has > 3x advantage)
-  // Strategy is fundamentally flawed against this opponent.
-  if (enemyCount > myCount * 3) return 0.75;
-  
-  // CLEAR DEFEAT
-  // Significant changes needed.
-  if (enemyCount > myCount * 1.5) return 0.55;
-  
-  // CLOSE LOSS / NARROW DEFEAT
-  // Just need better tuning.
-  return 0.45;
+
+  // DRAW
+  // SCENARIO H: STALEMATE (Timeout at 90s)
+  // Usually means both sides are hiding or running in circles.
+  // Needs significant "Behavioral Breaker" mutation.
+  return 0.65;
 };
 
 export const generateColonyDNA = async (

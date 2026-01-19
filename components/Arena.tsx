@@ -4,7 +4,7 @@ import { DEFAULT_ARENA_CONFIG } from '../constants';
 import SimulationView from './SimulationView';
 import Button from './Button';
 import Leaderboard from './Leaderboard';
-import { RefreshCw, Trophy, Home, Skull, Clock, BrainCircuit, Wind, Zap, Users } from 'lucide-react';
+import { RefreshCw, Trophy, Home, Skull, Clock, BrainCircuit, Wind, Zap, Users, ShieldAlert } from 'lucide-react';
 
 interface Props {
   p1DNA: ColonyDNA;
@@ -12,7 +12,7 @@ interface Props {
   onExit: () => void;
   isAutoMode?: boolean;
   matchHistory?: MatchResult[];
-  onAutoMatchComplete?: (stats: { p1: number, p2: number, winner: 'p1' | 'p2' | 'draw' }) => void;
+  onAutoMatchComplete?: (stats: { p1: number, p2: number, winner: 'p1' | 'p2' | 'draw', duration: number }) => void;
   arenaConfig?: ArenaConfig;
 }
 
@@ -35,6 +35,10 @@ const Arena: React.FC<Props> = ({
   // New States for Flow Control
   const [matchStatus, setMatchStatus] = useState<MatchStatus>('countdown');
   const [countdown, setCountdown] = useState(3);
+  
+  // AI Tactics State (for visual and logic)
+  const tacticsRef = useRef({ p1Retreat: false, p2Retreat: false });
+  const [tacticsDisplay, setTacticsDisplay] = useState({ p1Retreat: false, p2Retreat: false });
 
   const statsRef = useRef(stats);
   const hasTriggeredAutoEnd = useRef(false);
@@ -62,13 +66,13 @@ const Arena: React.FC<Props> = ({
         }
 
         const total = p1 + p2;
-        // Wait for initial spawn stabilization (e.g. first 20 frames or until total particles appear)
-        // Usually initial total is high.
+        // Wait for initial spawn stabilization (e.g. first few seconds)
         if (total > 50) {
            const initialCount = arenaConfig.particleCount * 2;
 
-           // Aggressive Victory (2x advantage + Growth via capture)
-           // If a player has doubled the opponent AND has more particles than they started with (showing net capture)
+           // 2. Aggressive Victory (2x advantage + Net Growth via capture)
+           // If a player has doubled the opponent AND has more particles than they started with.
+           // This rewards aggressive conversion over just hiding.
            if (p1 > p2 * 2.0 && p1 > initialCount) {
               setWinner('p1');
               setMatchStatus('finished');
@@ -80,13 +84,17 @@ const Arena: React.FC<Props> = ({
               return;
            }
 
-           // Dominance check (3x size difference or critical failure)
-           if (p1 > p2 * 3 || p2 < 10) {
+           // 3. Dominance / Mercy Rule (3x size difference)
+           // If one player is just crushing the other, end it regardless of growth.
+           if (p1 > p2 * 3.0) {
               setWinner('p1');
               setMatchStatus('finished');
-           } else if (p2 > p1 * 3 || p1 < 10) {
+              return;
+           } 
+           if (p2 > p1 * 3.0) {
               setWinner('p2');
               setMatchStatus('finished');
+              return;
            }
         }
     }
@@ -97,11 +105,52 @@ const Arena: React.FC<Props> = ({
     setTimeLeft(90);
     setWinner(null);
     hasTriggeredAutoEnd.current = false;
+    tacticsRef.current = { p1Retreat: false, p2Retreat: false };
+    setTacticsDisplay({ p1Retreat: false, p2Retreat: false });
     
     // Initialize Countdown
     setMatchStatus('countdown');
     setCountdown(3);
   }, [rematchKey, p1DNA, p2DNA]);
+
+  // AI Tactics Loop (Scouting/Retreat Behavior)
+  useEffect(() => {
+    if (!isAutoMode || matchStatus !== 'active') return;
+
+    const interval = setInterval(() => {
+       const { p1, p2 } = statsRef.current;
+       
+       // P1 Scouting Logic
+       // If outnumbered by 1.5x, 30% chance to retreat temporarily to regroup/scout
+       if (p2 > p1 * 1.5 && !tacticsRef.current.p1Retreat) {
+           if (Math.random() < 0.3) {
+               tacticsRef.current.p1Retreat = true;
+               setTacticsDisplay(prev => ({ ...prev, p1Retreat: true }));
+               
+               // Retreat for 2-4 seconds
+               setTimeout(() => {
+                   tacticsRef.current.p1Retreat = false;
+                   setTacticsDisplay(prev => ({ ...prev, p1Retreat: false }));
+               }, 2000 + Math.random() * 2000);
+           }
+       }
+
+       // P2 Scouting Logic
+       if (p1 > p2 * 1.5 && !tacticsRef.current.p2Retreat) {
+           if (Math.random() < 0.3) {
+               tacticsRef.current.p2Retreat = true;
+               setTacticsDisplay(prev => ({ ...prev, p2Retreat: true }));
+               
+               setTimeout(() => {
+                   tacticsRef.current.p2Retreat = false;
+                   setTacticsDisplay(prev => ({ ...prev, p2Retreat: false }));
+               }, 2000 + Math.random() * 2000);
+           }
+       }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isAutoMode, matchStatus]);
 
   // Countdown Logic
   useEffect(() => {
@@ -124,9 +173,20 @@ const Arena: React.FC<Props> = ({
             if (prev <= 1) {
                 clearInterval(timer);
                 const s = statsRef.current;
+                const total = s.p1 + s.p2;
+                const diff = Math.abs(s.p1 - s.p2);
+                
                 let w: 'p1' | 'p2' | 'draw' = 'draw';
-                if (s.p1 > s.p2) w = 'p1';
-                else if (s.p2 > s.p1) w = 'p2';
+                
+                // STALEMATE DETECTION
+                // If the difference is less than 10% of the total, declare a DRAW.
+                // This prevents "boring" wins where one player has 1 more particle.
+                if (total > 0 && (diff / total) < 0.10) {
+                   w = 'draw';
+                } else {
+                   if (s.p1 > s.p2) w = 'p1';
+                   else if (s.p2 > s.p1) w = 'p2';
+                }
                 
                 setWinner(w);
                 setMatchStatus('finished');
@@ -148,11 +208,12 @@ const Arena: React.FC<Props> = ({
            onAutoMatchComplete?.({
                p1: statsRef.current.p1,
                p2: statsRef.current.p2,
-               winner: winner
+               winner: winner,
+               duration: 90 - timeLeft
            });
         }, 2000);
     }
-  }, [winner, isAutoMode, onAutoMatchComplete]);
+  }, [winner, isAutoMode, onAutoMatchComplete, timeLeft]);
 
   const handleRematch = () => {
     setWinner(null);
@@ -173,7 +234,7 @@ const Arena: React.FC<Props> = ({
       {/* HUD Header */}
       <div className="h-28 w-full bg-[#0a0a0a] border-b border-white/10 flex items-center justify-between px-8 z-20">
          {/* Player 1 Stats */}
-         <div className="flex flex-col items-start w-72">
+         <div className="flex flex-col items-start w-72 relative">
             <h3 className="text-cyan-400 font-bold text-xl brand-font truncate w-full">{p1DNA.name}</h3>
             <span className="text-neutral-500 text-xs uppercase tracking-widest flex items-center gap-2">
                 Player 1 {isAutoMode && <BrainCircuit size={12} className="text-cyan-500 animate-pulse"/>}
@@ -186,6 +247,11 @@ const Arena: React.FC<Props> = ({
                   </div>
                 )}
             </div>
+            {tacticsDisplay.p1Retreat && (
+                <div className="absolute top-full left-0 mt-2 bg-red-500/20 border border-red-500/50 text-red-400 px-2 py-1 text-[10px] uppercase font-bold tracking-wider rounded flex items-center gap-1 animate-pulse">
+                    <ShieldAlert size={10} /> Scouting / Retreating
+                </div>
+            )}
          </div>
 
          {/* Center Bar & Environment Info */}
@@ -226,7 +292,7 @@ const Arena: React.FC<Props> = ({
          </div>
 
          {/* Player 2 Stats */}
-         <div className="flex flex-col items-end w-72">
+         <div className="flex flex-col items-end w-72 relative">
             <h3 className="text-orange-400 font-bold text-xl brand-font truncate w-full text-right">{p2DNA.name}</h3>
             <span className="text-neutral-500 text-xs uppercase tracking-widest flex items-center gap-2">
                 {isAutoMode && <BrainCircuit size={12} className="text-orange-500 animate-pulse"/>} Player 2
@@ -239,6 +305,11 @@ const Arena: React.FC<Props> = ({
                 )}
                 <div className="text-4xl font-mono font-bold text-white">{stats.p2}</div>
             </div>
+            {tacticsDisplay.p2Retreat && (
+                <div className="absolute top-full right-0 mt-2 bg-red-500/20 border border-red-500/50 text-red-400 px-2 py-1 text-[10px] uppercase font-bold tracking-wider rounded flex items-center gap-1 animate-pulse">
+                     Scouting / Retreating <ShieldAlert size={10} />
+                </div>
+            )}
          </div>
       </div>
 
@@ -261,6 +332,8 @@ const Arena: React.FC<Props> = ({
                 onStatsUpdate={handleStats}
                 arenaConfig={arenaConfig}
                 paused={matchStatus !== 'active'}
+                p1Retreat={tacticsDisplay.p1Retreat}
+                p2Retreat={tacticsDisplay.p2Retreat}
              />
         </div>
 
@@ -280,7 +353,6 @@ const Arena: React.FC<Props> = ({
         {winner && (
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-500">
              
-             {/* AUTO MODE OVERLAY REMOVED - WE NOW USE A SEPARATE SCREEN */}
              {/* STANDARD / RESULT OVERLAY */}
              <div className="bg-neutral-900 border border-white/10 p-12 rounded-2xl flex flex-col items-center shadow-2xl text-center max-w-lg w-full">
                 {winner === 'draw' ? (

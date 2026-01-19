@@ -17,6 +17,10 @@ interface Props {
   onSelectParticle?: (idx: number | null) => void;
   arenaConfig?: ArenaConfig;
   paused?: boolean;
+  
+  // Tactical Overrides (Real-time AI)
+  p1Retreat?: boolean;
+  p2Retreat?: boolean;
 }
 
 const SimulationView: React.FC<Props> = ({ 
@@ -29,7 +33,9 @@ const SimulationView: React.FC<Props> = ({
   selectedParticleIdx: propSelectedIdx,
   onSelectParticle,
   arenaConfig = DEFAULT_ARENA_CONFIG,
-  paused = false
+  paused = false,
+  p1Retreat = false,
+  p2Retreat = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<SimulationEngine | null>(null);
@@ -78,6 +84,13 @@ const SimulationView: React.FC<Props> = ({
       document.removeEventListener('click', unlockAudio);
     };
   }, [mode, player1DNA, player2DNA, isControlled, arenaConfig]); // Re-init on config change
+
+  // Apply Real-time Tactics (Does not re-init engine)
+  useEffect(() => {
+    if (engineRef.current && mode === 'arena') {
+        engineRef.current.setTactics(p1Retreat, p2Retreat);
+    }
+  }, [p1Retreat, p2Retreat, mode]);
 
   // Click Handler for Selection
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

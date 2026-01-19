@@ -30,6 +30,7 @@ export class SimulationEngine {
   // 0: P1_Type0, 1: P1_Type1
   // 2: P2_Type0, 3: P2_Type1
   forceMatrix: Float32Array; // 4x4 matrix flattened = 16 values
+  baseForceMatrix: Float32Array; // Store original DNA values for restoration
   
   // Simulation Config
   config: ArenaConfig;
@@ -58,6 +59,7 @@ export class SimulationEngine {
     this.owners = new Int8Array(maxParticles);
     this.trailHistory = new Float32Array(maxParticles * TRAIL_LENGTH * 2);
     this.forceMatrix = new Float32Array(16);
+    this.baseForceMatrix = new Float32Array(16);
     this.colors = [];
     this.config = { ...DEFAULT_ARENA_CONFIG };
     this.time = 0;
@@ -117,13 +119,13 @@ export class SimulationEngine {
     this.setForce(3, 1, p2.externalMatrix[1][1]);
     this.setForce(3, 2, p2.internalMatrix[1][0]);
     this.setForce(3, 3, p2.internalMatrix[1][1]);
+    
+    // Save base matrix for tactical overrides
+    this.baseForceMatrix.set(this.forceMatrix);
 
     this.colors = [...p1.colorPalette, ...p2.colorPalette];
 
     // Spawn Particles
-    // Use passed counts or override with config if called from init with config logic outside
-    // Actually, in the caller we will pass this.config.particleCount
-    
     this.spawnBatch(1, 0, p1CountPerType, 100, CANVAS_WIDTH / 2 - 50);
     this.spawnBatch(1, 1, p1CountPerType, 100, CANVAS_WIDTH / 2 - 50);
     this.spawnBatch(2, 0, p2CountPerType, CANVAS_WIDTH / 2 + 50, CANVAS_WIDTH - 100);
@@ -140,6 +142,9 @@ export class SimulationEngine {
     this.setForce(1, 0, p.internalMatrix[1][0]);
     this.setForce(1, 1, p.internalMatrix[1][1]);
     
+    // Save base (though tactics aren't used in training usually)
+    this.baseForceMatrix.set(this.forceMatrix);
+
     this.colors = [...p.colorPalette, '#333333', '#333333']; // Others are dummy
 
     this.spawnBatch(1, 0, countPerType, 0, CANVAS_WIDTH);
@@ -148,6 +153,40 @@ export class SimulationEngine {
 
   private setForce(a: number, b: number, val: number) {
     this.forceMatrix[a * 4 + b] = val;
+  }
+
+  // Real-time Tactical Overrides
+  // If a player is retreating, we invert their external attraction to enemies (turn chase into run)
+  setTactics(p1Retreat: boolean, p2Retreat: boolean) {
+     // Restore base
+     this.forceMatrix.set(this.baseForceMatrix);
+
+     const RETREAT_FORCE = -0.9;
+
+     if (p1Retreat) {
+        // P1 (Types 0, 1) vs Enemy (Types 2, 3)
+        // Indices: [0][2], [0][3], [1][2], [1][3] -> 2, 3, 6, 7
+        const indices = [2, 3, 6, 7];
+        for(const idx of indices) {
+            // Only invert if we were attacking (positive). 
+            // If already negative (running), keep it or make it stronger? 
+            // Let's enforce a strong retreat.
+            if (this.baseForceMatrix[idx] > -0.2) {
+                this.forceMatrix[idx] = RETREAT_FORCE;
+            }
+        }
+     }
+
+     if (p2Retreat) {
+        // P2 (Types 2, 3) vs Enemy (Types 0, 1)
+        // Indices: [2][0], [2][1], [3][0], [3][1] -> 8, 9, 12, 13
+        const indices = [8, 9, 12, 13];
+        for(const idx of indices) {
+            if (this.baseForceMatrix[idx] > -0.2) {
+                this.forceMatrix[idx] = RETREAT_FORCE;
+            }
+        }
+     }
   }
 
   private spawnBatch(owner: number, type: number, count: number, xMin: number, xMax: number) {
@@ -325,26 +364,36 @@ export class SimulationEngine {
           let vY = vel[i*2+1];
           
           let bounced = false;
+          let damping = 0;
 
-          // X Axis Bounce
-          if (pX < 0) {
-             pX = 0;
-             vX *= -0.95; // Damped bounce
-             bounced = true;
-          } else if (pX > CANVAS_WIDTH) {
-             pX = CANVAS_WIDTH;
-             vX *= -0.95; // Damped bounce
+          // X Axis Bounce Check
+          if (pX < 0 || pX > CANVAS_WIDTH) {
+             pX = (pX < 0) ? 0 : CANVAS_WIDTH;
+             
+             // Dynamic Damping based on Impact Speed
+             // Optimization: Only calc speedSq if we actually bounce
+             if (damping === 0) {
+                 const speedSq = vX*vX + vY*vY;
+                 // Variable damping: Faster particles (high energy) retain more speed (up to 0.95)
+                 // Slower particles lose more speed (down to 0.60)
+                 // Formula: 0.6 + (speedSq / 40.0) * 0.35 -> Clamped at 0.95
+                 damping = Math.min(0.95, 0.6 + (speedSq / 40.0) * 0.35);
+             }
+             
+             vX *= -damping; 
              bounced = true;
           }
 
-          // Y Axis Bounce
-          if (pY < 0) {
-             pY = 0;
-             vY *= -0.95; // Damped bounce
-             bounced = true;
-          } else if (pY > CANVAS_HEIGHT) {
-             pY = CANVAS_HEIGHT;
-             vY *= -0.95; // Damped bounce
+          // Y Axis Bounce Check
+          if (pY < 0 || pY > CANVAS_HEIGHT) {
+             pY = (pY < 0) ? 0 : CANVAS_HEIGHT;
+
+             if (damping === 0) {
+                 const speedSq = vX*vX + vY*vY;
+                 damping = Math.min(0.95, 0.6 + (speedSq / 40.0) * 0.35);
+             }
+             
+             vY *= -damping; 
              bounced = true;
           }
 
