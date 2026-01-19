@@ -1,7 +1,6 @@
 
 import { Howl, Howler } from 'howler';
 
-// --- MUSIC CONSTANTS ---
 const BASE_FREQ_A1 = 40.0; 
 
 // CYBERPUNK SCALES (Darker, Exotic)
@@ -29,76 +28,76 @@ const THEMES: Record<ThemeType, ThemeConfig> = {
   MENU: {
     scale: SCALE_LOCRIAN,
     baseOctave: 1, 
-    bpm: 30, // Much slower drone
+    bpm: 25, 
     arpRate: 0.1,
-    padCutoff: 300,
-    reverbLevel: 0.9,
-    waveType: 'sine', // Smoother
+    padCutoff: 200, 
+    reverbLevel: 0.95,
+    waveType: 'sine', 
     detuneAmount: 3,
     hasSubBass: true
   },
   BATTLE_STD: {
     scale: SCALE_PHRYGIAN_DOM,
     baseOctave: 2,
-    bpm: 60, 
-    arpRate: 0.6,
-    padCutoff: 1500,
-    reverbLevel: 0.5,
-    waveType: 'sawtooth',
-    detuneAmount: 10,
+    bpm: 40, 
+    arpRate: 0.4,
+    padCutoff: 600, 
+    reverbLevel: 0.8,
+    waveType: 'triangle', 
+    detuneAmount: 5,
     hasSubBass: true
   },
   BATTLE_VOID: {
     scale: SCALE_HUNGARIAN_MINOR,
     baseOctave: 1,
-    bpm: 40,
-    arpRate: 0.3,
-    padCutoff: 400,
-    reverbLevel: 0.95,
-    waveType: 'triangle',
-    detuneAmount: 5,
+    bpm: 30,
+    arpRate: 0.2,
+    padCutoff: 300,
+    reverbLevel: 0.98,
+    waveType: 'sine',
+    detuneAmount: 4,
     hasSubBass: true
   },
   BATTLE_SOUP: {
     scale: SCALE_DORIAN_b2,
     baseOctave: 2,
-    bpm: 70, 
-    arpRate: 0.6,
-    padCutoff: 1000,
-    reverbLevel: 0.4,
-    waveType: 'square',
-    detuneAmount: 15,
+    bpm: 45, 
+    arpRate: 0.5,
+    padCutoff: 500,
+    reverbLevel: 0.85,
+    waveType: 'triangle', 
+    detuneAmount: 8,
     hasSubBass: true
   },
   BATTLE_DARK: {
     scale: SCALE_LOCRIAN,
     baseOctave: 1,
-    bpm: 50,
-    arpRate: 0.5,
-    padCutoff: 600,
-    reverbLevel: 0.7,
-    waveType: 'sawtooth',
-    detuneAmount: 20, 
+    bpm: 35,
+    arpRate: 0.3,
+    padCutoff: 400,
+    reverbLevel: 0.9,
+    waveType: 'sine', 
+    detuneAmount: 6, 
     hasSubBass: true
   },
   BATTLE_ACID: {
       scale: SCALE_HIRAJOSHI,
       baseOctave: 2,
-      bpm: 80, 
-      arpRate: 0.8,
-      padCutoff: 2000, 
-      reverbLevel: 0.3,
-      waveType: 'square',
+      bpm: 50, 
+      arpRate: 0.6,
+      padCutoff: 800, 
+      reverbLevel: 0.7,
+      waveType: 'triangle', 
       detuneAmount: 8,
       hasSubBass: false
   },
   EVOLUTION: {
     scale: SCALE_HIRAJOSHI,
     baseOctave: 3,
-    bpm: 110, // Fast data processing feel
-    arpRate: 0.95, 
-    padCutoff: 1500,
-    reverbLevel: 0.3,
+    bpm: 60, 
+    arpRate: 0.8, 
+    padCutoff: 1000,
+    reverbLevel: 0.6,
     waveType: 'sine',
     detuneAmount: 2,
     hasSubBass: false
@@ -106,11 +105,11 @@ const THEMES: Record<ThemeType, ThemeConfig> = {
   LEADERBOARD: {
     scale: SCALE_PHRYGIAN_DOM,
     baseOctave: 2,
-    bpm: 60,
+    bpm: 40,
     arpRate: 0.2,
-    padCutoff: 600,
-    reverbLevel: 0.6,
-    waveType: 'triangle',
+    padCutoff: 400,
+    reverbLevel: 0.9,
+    waveType: 'sine',
     detuneAmount: 5,
     hasSubBass: true
   }
@@ -185,11 +184,21 @@ class SynthEngine {
 
   init() {
     if (this.ctx) return;
+    
+    // Robust check for Howler context or fallback
+    if (!Howler.ctx) {
+        // Attempt to force create a context if Howler hasn't yet
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+            Howler.ctx = new AudioContext();
+        }
+    }
+    
     this.ctx = Howler.ctx;
     if (!this.ctx) return;
     
     this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.6; // Increased from 0.35 to 0.6 for louder music
+    this.masterGain.gain.value = 0.6; 
 
     this.distortion = this.ctx.createWaveShaper();
     this.distortion.curve = this.makeDistortionCurve(10);
@@ -206,13 +215,13 @@ class SynthEngine {
     this.compressor.connect(this.ctx.destination);
 
     this.delayNode = this.ctx.createDelay();
-    this.delayNode.delayTime.value = 0.5; // Longer delay for space feel
+    this.delayNode.delayTime.value = 0.7; 
     this.feedbackGain = this.ctx.createGain();
-    this.feedbackGain.gain.value = 0.5; // More feedback
+    this.feedbackGain.gain.value = 0.7; 
 
     const delayFilter = this.ctx.createBiquadFilter();
     delayFilter.type = 'lowpass';
-    delayFilter.frequency.value = 800; 
+    delayFilter.frequency.value = 600; 
 
     this.delayNode.connect(delayFilter);
     delayFilter.connect(this.feedbackGain);
@@ -240,20 +249,24 @@ class SynthEngine {
 
   setTheme(themeName: ThemeType) {
     const config = THEMES[themeName];
-    if (!config || !this.ctx) return;
-    
-    const now = this.ctx.currentTime;
-    
-    if (this.padFilter) {
-        this.padFilter.frequency.exponentialRampToValueAtTime(Math.max(100, config.padCutoff), now + 3);
-    }
-
-    if (this.feedbackGain) {
-        this.feedbackGain.gain.linearRampToValueAtTime(config.reverbLevel * 0.6, now + 3);
-    }
+    if (!config) return;
     
     this.currentTheme = config;
-    this.startDrone();
+
+    if (this.ctx) {
+        const now = this.ctx.currentTime;
+        if (this.padFilter) {
+            this.padFilter.frequency.exponentialRampToValueAtTime(Math.max(100, config.padCutoff), now + 3);
+        }
+
+        if (this.feedbackGain) {
+            this.feedbackGain.gain.linearRampToValueAtTime(config.reverbLevel * 0.7, now + 3);
+        }
+        
+        if (this.isPlaying) {
+             this.startDrone();
+        }
+    }
   }
 
   start() {
@@ -262,7 +275,7 @@ class SynthEngine {
     if (this.ctx.state === 'suspended') this.ctx.resume();
 
     this.isPlaying = true;
-    this.masterGain!.gain.value = 0.6; // Ensure loud start
+    this.masterGain!.gain.value = 0.6; 
     
     this.startDrone();
     this.scheduleLoop();
@@ -273,7 +286,7 @@ class SynthEngine {
       this.stopDrone();
 
       this.droneGain = this.ctx.createGain();
-      this.droneGain.gain.value = 0.1; // Slightly louder drone
+      this.droneGain.gain.value = 0.25; // Boosted drone volume
 
       // Main Drone
       this.droneOsc = this.ctx.createOscillator();
@@ -324,7 +337,7 @@ class SynthEngine {
     const sixteenth = beatTime / 4;
 
     // --- CHORD PROGRESSION ---
-    if (this.step % 64 === 0) { // Much slower chord changes
+    if (this.step % 64 === 0) { 
         const progression = [0, 2, 4, 1, 5, 0];
         this.chordRootIndex = progression[Math.floor(Math.random() * progression.length)];
         
@@ -336,7 +349,7 @@ class SynthEngine {
              this.droneSub.frequency.exponentialRampToValueAtTime(freq * 0.5, now + 1.0);
         }
 
-        this.playPad(now, 10); // Long pads
+        this.playPad(now, 12); 
     }
 
     // --- SPACE ARPEGGIATOR ---
@@ -352,18 +365,18 @@ class SynthEngine {
         
         const voice = new OscillatorVoice(
             this.ctx, 
-            this.currentTheme.waveType === 'square' ? 'triangle' : 'sine', // Use softer waves for arps
+            this.currentTheme.waveType === 'square' ? 'triangle' : 'sine', 
             freq, 
             this.padFilter!,
             detuneAmount
         );
         
-        // Soft Pluck
-        voice.play(sixteenth * 2, 0.05, now, 0.05, 0.5);
+        // Boosted arp volume
+        voice.play(sixteenth * 3, 0.15, now, 0.1, 0.8);
         
         setTimeout(() => {
-            voice.stop(this.ctx!.currentTime);
-        }, 1000);
+            if (this.ctx) voice.stop(this.ctx.currentTime);
+        }, 1500);
     }
 
     this.step++;
@@ -381,11 +394,13 @@ class SynthEngine {
       });
 
       notes.forEach(freq => {
-          const v = new OscillatorVoice(this.ctx!, 'sawtooth', freq, this.padFilter!, detuneAmount / 2);
-          v.play(duration, 0.03, now, 3.0, 5.0); // Slow attack/release
+          const wave = this.currentTheme.waveType === 'sawtooth' ? 'triangle' : this.currentTheme.waveType;
+          const v = new OscillatorVoice(this.ctx!, wave, freq, this.padFilter!, detuneAmount / 2);
+          // Boosted pad volume
+          v.play(duration, 0.1, now, 4.0, 6.0); 
           
           setTimeout(() => {
-              v.stop(this.ctx!.currentTime);
+              if (this.ctx) v.stop(this.ctx.currentTime);
           }, (duration + 8) * 1000);
       });
   }
@@ -403,153 +418,126 @@ class SynthEngine {
 }
 
 // --- COMPLEX PROCEDURAL AUDIO GENERATION ---
-// Generates complex waveforms by mixing sine, noise, and FM synthesis
 const createAudioDataURI = (type: 'impact' | 'swell', durationSec: number, options: any = {}) => {
   const { volume = 1.0 } = options;
   const sampleRate = 44100;
   const numFrames = Math.floor(durationSec * sampleRate);
-  const waveData = new Uint8Array(44 + numFrames);
+  const waveData = new Uint8Array(44 + numFrames * 2);
   const view = new DataView(waveData.buffer);
   
   // WAV Header (Standard)
-  view.setUint32(0, 0x52494646, false); view.setUint32(4, 36 + numFrames, true);
+  view.setUint32(0, 0x52494646, false); view.setUint32(4, 36 + numFrames * 2, true);
   view.setUint32(8, 0x57415645, false); view.setUint32(12, 0x666d7420, false);
   view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate, true);
-  view.setUint16(32, 1, true); view.setUint16(34, 8, true);
-  view.setUint32(36, 0x64617461, false); view.setUint32(40, numFrames, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  view.setUint32(36, 0x64617461, false); view.setUint32(40, numFrames * 2, true);
 
   for (let i = 0; i < numFrames; i++) {
     const t = i / sampleRate;
     let sample = 0;
 
     if (type === 'impact') {
-        // High frequency noise burst + metallic ping
-        // Envelope: Instant attack, fast exponential decay
         const envelope = Math.exp(-t * 40); 
-        
-        // 1. White Noise (Impact)
         const noise = (Math.random() * 2 - 1) * 0.5;
-        
-        // 2. Metallic Ring (FM Sine)
         const freq = 1200;
-        const fm = Math.sin(2 * Math.PI * 50 * t) * 200; // 50Hz vibration
+        const fm = Math.sin(2 * Math.PI * 50 * t) * 200; 
         const metal = Math.sin(2 * Math.PI * (freq + fm) * t);
-        
         sample = (noise * 0.7 + metal * 0.3) * envelope;
     } 
     else if (type === 'swell') {
-        // "Capture" sound: Low rumble swelling into a digital chime
-        // Envelope: Bowed (slow attack, slow decay)
         const envelope = Math.sin(Math.PI * (t / durationSec)); 
-        
-        // 1. Low Thrum (FM)
         const baseFreq = 80;
         const modFreq = 20;
         const modulation = Math.sin(2 * Math.PI * modFreq * t) * 30;
         const low = Math.sin(2 * Math.PI * (baseFreq + modulation) * t);
-
-        // 2. High Chime (Descending)
         const highFreq = 800 * (1 - t * 0.5);
         const high = Math.sin(2 * Math.PI * highFreq * t);
-        
         sample = (low * 0.6 + high * 0.4) * envelope;
     }
 
+    sample *= volume;
     // Clip
     sample = Math.max(-1, Math.min(1, sample));
     
-    // Convert to 8-bit offset binary
-    waveData[44 + i] = Math.floor((sample * volume * 0.8 + 1) * 127.5);
+    // Convert float to 16-bit PCM (Little Endian)
+    const s = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+    view.setInt16(44 + i * 2, s, true);
   }
   
-  const blob = new Blob([waveData], { type: 'audio/wav' });
+  const blob = new Blob([view], { type: 'audio/wav' });
   return URL.createObjectURL(blob);
 };
 
-// "Capture" = Swell (Liquid/Sci-fi) - Reduced Volume significantly
-const captureURI = createAudioDataURI('swell', 0.6, { volume: 0.3 });
-// "Collision" = Impact (Metallic/Click) - Reduced Volume significantly
-const collisionURI = createAudioDataURI('impact', 0.1, { volume: 0.15 });
+class SoundManager {
+    engine: SynthEngine;
+    enabled: boolean = false;
+    initialized: boolean = false;
+    sfx: Record<string, Howl> = {};
 
-class SoundService {
-  private capture: Howl;
-  private collision: Howl;
-  private musicEngine: SynthEngine;
-  public enabled: boolean = true;
-  
-  private lastCaptureTime = 0;
-  private lastCollisionTime = 0;
+    constructor() {
+        this.engine = new SynthEngine();
+    }
 
-  constructor() {
-    this.musicEngine = new SynthEngine();
-    // Reduced base volume of effects
-    this.capture = new Howl({ src: [captureURI], format: ['wav'], volume: 0.2, pool: 10 });
-    this.collision = new Howl({ src: [collisionURI], format: ['wav'], volume: 0.05, pool: 20 });
-  }
+    initialize() {
+        if (this.initialized) return;
+        
+        try {
+            this.sfx['collision'] = new Howl({
+                src: [createAudioDataURI('impact', 0.1, { volume: 0.3 })],
+                format: ['wav'],
+                volume: 0.2
+            });
+            this.sfx['capture'] = new Howl({
+                src: [createAudioDataURI('swell', 0.4, { volume: 0.6 })],
+                format: ['wav'],
+                volume: 0.5
+            });
+        } catch(e) { console.warn("SFX gen failed", e); }
+        
+        this.initialized = true;
+    }
 
-  initialize() {
-    if (this.enabled) this.musicEngine.start();
-  }
-
-  setTheme(scene: 'menu' | 'arena' | 'evolution' | 'leaderboard', envName?: string) {
-      let theme: ThemeType = 'MENU';
-      
-      if (scene === 'menu') theme = 'MENU';
-      else if (scene === 'leaderboard') theme = 'LEADERBOARD';
-      else if (scene === 'evolution') theme = 'EVOLUTION';
-      else if (scene === 'arena') {
-          if (envName?.includes('Vacuum')) theme = 'BATTLE_VOID';
-          else if (envName?.includes('Soup')) theme = 'BATTLE_SOUP';
-          else {
-              const rand = Math.random();
-              if (rand < 0.33) theme = 'BATTLE_STD';
-              else if (rand < 0.66) theme = 'BATTLE_DARK';
-              else theme = 'BATTLE_ACID';
-          }
-      }
-
-      this.musicEngine.setTheme(theme);
-  }
-
-  playBatch(events: any) {
-    if (!this.enabled) return;
-    const now = Date.now();
-
-    if (events.captures > 0) {
-        // Increased throttle to 400ms for less frequent sounds
-        if (now - this.lastCaptureTime > 400) { 
-            const id = this.capture.play();
-            // Vary pitch slightly for organic feel
-            this.capture.rate(0.9 + Math.random() * 0.2, id);
-            this.lastCaptureTime = now;
+    toggle(state: boolean) {
+        this.enabled = state;
+        if (state) {
+            // Ensure context is running if blocked by browser autoplay policy
+            if (Howler.ctx && Howler.ctx.state === 'suspended') {
+                 Howler.ctx.resume();
+            }
+            this.engine.start();
+        } else {
+            this.engine.stop();
         }
     }
 
-    if (events.collisions > 0) {
-        // Increased throttle to 350ms for less frequent sounds
-        if (now - this.lastCollisionTime > 350) { 
-            const id = this.collision.play();
-            // Higher pitch variation for collisions
-            this.collision.rate(0.8 + Math.random() * 0.4, id);
-            // Dynamic volume based on intensity (scaled down)
-            const vol = Math.min(events.collisions, 10) / 100; 
-            this.collision.volume(vol, id);
-            this.lastCollisionTime = now;
+    setTheme(scene: string, envName?: string) {
+        let theme: ThemeType = 'MENU';
+        if (scene === 'menu') theme = 'MENU';
+        else if (scene === 'evolution') theme = 'EVOLUTION';
+        else if (scene === 'leaderboard') theme = 'LEADERBOARD';
+        else if (scene === 'arena') {
+             if (envName?.includes('Soup')) theme = 'BATTLE_SOUP';
+             else if (envName?.includes('Vacuum')) theme = 'BATTLE_VOID';
+             else if (envName?.includes('Swarm')) theme = 'BATTLE_DARK';
+             else if (envName?.includes('Zero')) theme = 'BATTLE_ACID';
+             else theme = 'BATTLE_STD';
+        }
+        this.engine.setTheme(theme);
+    }
+
+    playBatch(events: { collisions: number, captures: number }) {
+        if (!this.enabled) return;
+        
+        if (events.captures > 0) {
+            const id = this.sfx['capture']?.play();
+            this.sfx['capture']?.rate(0.9 + Math.random() * 0.2, id);
+        }
+        if (events.collisions > 0 && Math.random() < 0.1) {
+            const id = this.sfx['collision']?.play();
+            this.sfx['collision']?.rate(0.8 + Math.random() * 0.4, id);
         }
     }
-  }
-
-  toggle(on: boolean) {
-    this.enabled = on;
-    if (on) {
-        Howler.mute(false);
-        this.musicEngine.start();
-    } else {
-        Howler.mute(true);
-        this.musicEngine.stop();
-    }
-  }
 }
 
-export const soundManager = new SoundService();
+export const soundManager = new SoundManager();

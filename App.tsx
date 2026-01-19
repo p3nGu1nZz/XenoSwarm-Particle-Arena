@@ -85,9 +85,28 @@ const App: React.FC = () => {
   // Transition state for Evolution View effect
   const [evolutionPhase, setEvolutionPhase] = useState<'analyzing' | 'applying'>('analyzing');
 
+  // --- AUDIO INITIALIZATION ---
   useEffect(() => {
       setAiPool(generateAIPool(20));
       soundManager.initialize();
+
+      // AudioContext is often blocked until user interaction
+      const unlockAudio = () => {
+          if (!soundManager.enabled) {
+             soundManager.toggle(true);
+          }
+          // Remove listeners after first interaction
+          document.removeEventListener('click', unlockAudio);
+          document.removeEventListener('keydown', unlockAudio);
+      };
+      
+      document.addEventListener('click', unlockAudio);
+      document.addEventListener('keydown', unlockAudio);
+      
+      return () => {
+          document.removeEventListener('click', unlockAudio);
+          document.removeEventListener('keydown', unlockAudio);
+      };
   }, []);
 
   // Sync Music with Scene
@@ -123,13 +142,28 @@ const App: React.FC = () => {
      setMatchHistory([]);
      setIsLocalMatch(false);
      
-     // Pick two distinct random agents from pool
-     const idx1 = Math.floor(Math.random() * aiPool.length);
-     let idx2 = Math.floor(Math.random() * aiPool.length);
-     while (idx2 === idx1) idx2 = Math.floor(Math.random() * aiPool.length);
+     // --- COMPETITIVE MATCHMAKING ---
+     // Sort pool by score to determine ranks
+     const sortedPool = [...aiPool].sort((a, b) => b.score - a.score);
+     
+     // 1. Pick Agent 1 randomly
+     const idx1 = Math.floor(Math.random() * sortedPool.length);
+     const agent1 = sortedPool[idx1];
 
-     const agent1 = aiPool[idx1];
-     const agent2 = aiPool[idx2];
+     // 2. Pick Agent 2 using Proximity Matchmaking
+     // Look +/- 4 ranks around Agent 1. This ensures similarly skilled opponents.
+     const range = 4;
+     const minIdx = Math.max(0, idx1 - range);
+     const maxIdx = Math.min(sortedPool.length - 1, idx1 + range);
+     
+     let candidates = sortedPool.slice(minIdx, maxIdx + 1).filter(p => p.id !== agent1.id);
+     
+     // Fallback / Wildcard: 20% chance to pick completely random opponent (Upsets/Stomps)
+     if (candidates.length === 0 || Math.random() < 0.20) {
+         candidates = sortedPool.filter(p => p.id !== agent1.id);
+     }
+
+     const agent2 = candidates[Math.floor(Math.random() * candidates.length)];
 
      setActiveProfileP1(agent1);
      setActiveProfileP2(agent2);
@@ -284,25 +318,37 @@ const App: React.FC = () => {
               await new Promise(r => setTimeout(r, 1500));
 
               // Update Pool with NEW DNA and UPDATED HISTORY
-              setAiPool(prev => prev.map(p => {
+              // We create the updated pool locally first to perform matchmaking on the latest state
+              const updatedPool = aiPool.map(p => {
                   if (p.id === activeProfileP1.id) return { ...p, dna: newDna1, evolutionHistory: p1FullHistory };
                   if (p.id === activeProfileP2.id) return { ...p, dna: newDna2, evolutionHistory: p2FullHistory };
                   return p;
-              }));
-
-              // Pick NEW combatants
-              let nextAgent1 = activeProfileP1; // Fallback
-              let nextAgent2 = activeProfileP2;
-
-              setAiPool(currentPool => {
-                  const idx1 = Math.floor(Math.random() * currentPool.length);
-                  let idx2 = Math.floor(Math.random() * currentPool.length);
-                  while (idx2 === idx1) idx2 = Math.floor(Math.random() * currentPool.length);
-
-                  nextAgent1 = currentPool[idx1];
-                  nextAgent2 = currentPool[idx2];
-                  return currentPool;
               });
+
+              setAiPool(updatedPool);
+
+              // --- COMPETITIVE MATCHMAKING (NEXT ROUND) ---
+              const sortedPool = [...updatedPool].sort((a, b) => b.score - a.score);
+              
+              // 1. Pick Agent 1 randomly
+              const idx1 = Math.floor(Math.random() * sortedPool.length);
+              const nextAgent1 = sortedPool[idx1];
+
+              // 2. Pick Agent 2 using Proximity Matchmaking
+              const range = 4;
+              const minIdx = Math.max(0, idx1 - range);
+              const maxIdx = Math.min(sortedPool.length - 1, idx1 + range);
+              
+              let candidates = sortedPool.slice(minIdx, maxIdx + 1).filter(p => p.id !== nextAgent1.id);
+              
+              // Wildcard / Fallback
+              if (candidates.length === 0 || Math.random() < 0.20) {
+                   candidates = sortedPool.filter(p => p.id !== nextAgent1.id);
+              }
+
+              const nextAgent2 = candidates.length > 0 
+                    ? candidates[Math.floor(Math.random() * candidates.length)]
+                    : sortedPool.find(p => p.id !== nextAgent1.id) || nextAgent1;
 
               // Transition to Arena
               setEvolutionStatus("GENERATION COMPLETE");
@@ -457,14 +503,14 @@ const App: React.FC = () => {
                   XENO<span className="block text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 -mt-4">SWARM</span>
                 </h1>
                 <div className="flex items-center gap-4 mt-2 ml-2">
-                    <span className="bg-cyan-500 text-black px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest">v3.3 Memory Enabled</span>
+                    <span className="bg-cyan-500 text-black px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest">v3.4 Ranked</span>
                     <p className="text-xl text-cyan-200 font-light tracking-[0.4em] uppercase brand-font">Particle Arena</p>
                 </div>
             </div>
             
             <p className="text-neutral-400 font-mono max-w-md leading-relaxed border-l border-white/10 pl-4 pointer-events-auto">
                 Engineer the ultimate particle colony. Optimize DNA matrices for swarm behavior. 
-                Experience the new Neural Evolution Engine with persistent memory.
+                Experience the new Neural Evolution Engine with persistent memory and ranked matchmaking.
             </p>
 
             <div className="flex gap-8 text-neutral-500 font-mono text-xs pointer-events-auto">

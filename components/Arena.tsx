@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ColonyDNA, MatchResult, ArenaConfig } from '../types';
 import { DEFAULT_ARENA_CONFIG } from '../constants';
@@ -16,6 +17,78 @@ interface Props {
 }
 
 type MatchStatus = 'countdown' | 'active' | 'finished';
+
+const VictoryParticles: React.FC<{ color: string }> = ({ color }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const resize = () => {
+            if (canvas.parentElement) {
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = canvas.parentElement.clientHeight;
+            }
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        const particles: any[] = [];
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+
+        for (let i = 0; i < 200; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Math.random() * 50; // Start slightly spread
+            const speed = Math.random() * 8 + 2;
+            particles.push({
+                x: cx + Math.cos(angle) * dist,
+                y: cy + Math.sin(angle) * dist,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1.0,
+                decay: Math.random() * 0.015 + 0.005,
+                color: color,
+                size: Math.random() * 3 + 2
+            });
+        }
+
+        let animationFrame: number;
+        const render = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vx *= 0.96; // Air resistance
+                p.vy *= 0.96;
+                p.life -= p.decay;
+                
+                if (p.life > 0) {
+                    ctx.globalAlpha = p.life;
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.globalAlpha = 1.0;
+            animationFrame = requestAnimationFrame(render);
+        };
+        render();
+
+        return () => {
+            cancelAnimationFrame(animationFrame);
+            window.removeEventListener('resize', resize);
+        };
+    }, [color]);
+
+    return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-0" />;
+};
 
 const Arena: React.FC<Props> = ({ 
   p1DNA, 
@@ -370,7 +443,6 @@ const Arena: React.FC<Props> = ({
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[600px] z-20 pointer-events-none">
            <div className="flex justify-between items-center text-[10px] font-mono text-neutral-500 mb-2 uppercase tracking-widest">
                <span>Power Balance</span>
-               {/* Removed FPS Counter */}
                <span className="flex items-center gap-2 text-white/40">SYSTEM OPTIMAL</span>
            </div>
            
@@ -434,13 +506,32 @@ const Arena: React.FC<Props> = ({
         )}
 
         {winner && matchStatus === 'finished' && (
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-xl z-50 flex items-center justify-center animate-in fade-in duration-700">
-             <div className="text-center relative">
-                 <div className="absolute -inset-20 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 blur-[100px] rounded-full"></div>
-                 <h2 className="relative text-9xl font-black brand-font mb-4 text-white tracking-wide animate-pulse italic">
-                    {winner === 'p1' ? 'VICTORY' : winner === 'p2' ? 'DEFEAT' : 'DRAW'}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-xl z-50 flex items-center justify-center animate-in fade-in duration-700 overflow-hidden">
+             
+             {/* Particles for Winner */}
+             {winner !== 'draw' && (
+                 <VictoryParticles 
+                    color={winner === 'p1' ? p1DNA.colorPalette[0] : p2DNA.colorPalette[0]} 
+                 />
+             )}
+
+             <div className="text-center relative z-10 p-12 bg-black/40 border border-white/10 rounded-3xl backdrop-blur-md shadow-[0_0_50px_rgba(0,0,0,0.5)] transform scale-110">
+                 <div className={`absolute -inset-20 bg-gradient-to-r ${winner === 'p1' ? 'from-cyan-500/20' : winner === 'p2' ? 'from-orange-500/20' : 'from-white/10'} to-purple-500/20 blur-[100px] rounded-full`}></div>
+                 
+                 <h2 className={`relative text-8xl font-black brand-font mb-2 tracking-tighter animate-pulse italic drop-shadow-2xl ${winner === 'p1' ? 'text-cyan-400' : winner === 'p2' ? 'text-orange-400' : 'text-white'}`}>
+                    {winner === 'draw' ? 'DRAW' : (isAutoMode ? 'VICTORY' : (winner === 'p1' ? 'VICTORY' : 'DEFEAT'))}
                  </h2>
-                 <p className="relative text-cyan-400 mono-font tracking-widest text-lg border-t border-b border-white/10 py-4">COMPILING BATTLE METRICS...</p>
+                 
+                 {/* Show Name in AutoMode or if it's a win */}
+                 {winner !== 'draw' && (
+                     <div className={`relative text-3xl font-bold brand-font mb-8 tracking-wide ${winner === 'p1' ? 'text-cyan-100' : 'text-orange-100'}`}>
+                        {winner === 'p1' ? p1DNA.name : p2DNA.name}
+                     </div>
+                 )}
+                 
+                 <p className="relative text-neutral-400 mono-font tracking-widest text-xs border-t border-b border-white/10 py-4">
+                    {isAutoMode ? "COMPILING EVOLUTIONARY DATA..." : "RETURNING TO HUB..."}
+                 </p>
              </div>
           </div>
         )}
