@@ -144,6 +144,7 @@ const SimulationView: React.FC<Props> = ({
       ctx.globalCompositeOperation = 'screen';
 
       const pos = engine.positions;
+      const vel = engine.velocities;
       const owners = engine.owners;
       const types = engine.types;
       const count = engine.count;
@@ -152,70 +153,85 @@ const SimulationView: React.FC<Props> = ({
       const history = engine.trailHistory;
       const stride = TRAIL_LENGTH * 2;
 
-      // 1. Draw Trails (Batched Optimization)
+      // 1. Draw Trails (Dynamic Color per Particle)
       if (showTrails) {
          ctx.lineWidth = 1;
-         ctx.globalAlpha = 0.2;
-
-         // We typically have 4 main colors (indices 0-3) plus a potential fallback (4)
-         // Iterate through possible color indices to batch draw calls
-         const MAX_COLOR_INDICES = 5; 
          
-         for (let colorBatch = 0; colorBatch < MAX_COLOR_INDICES; colorBatch++) {
-             // Optimization: Check if we even need to draw this batch
-             // engine.colors might not have all 5 filled
-             if (!colors[colorBatch] && colorBatch < 4) continue;
-
-             const color = colors[colorBatch] || '#ffffff';
-
-             ctx.strokeStyle = color;
-             ctx.beginPath();
-             let batchHasPaths = false;
-
-             for (let i = 0; i < count; i++) {
-                 // Skip selected particle (drawn individually later with higher opacity)
-                 if (i === activeSelectedIdx) continue;
-
-                 const owner = owners[i];
-                 const type = types[i];
-                 
-                 let pColorIdx = 0;
-                 if (owner === 1) pColorIdx = type;
-                 else if (owner === 2) pColorIdx = 2 + type;
-                 else pColorIdx = 4;
-
-                 if (pColorIdx !== colorBatch) continue;
-
-                 // Draw Trail for Particle i
-                 const baseIdx = i * stride;
-                 
-                 // Start at oldest position (index 0)
-                 let currX = history[baseIdx];
-                 let currY = history[baseIdx + 1];
-                 ctx.moveTo(currX, currY);
-
-                 for (let t = 1; t < TRAIL_LENGTH; t++) {
-                     const nextX = history[baseIdx + t*2];
-                     const nextY = history[baseIdx + t*2 + 1];
-                     
-                     // Wrap detection: if distance is too large, move instead of line
-                     if (Math.abs(nextX - currX) > CANVAS_WIDTH / 2 || Math.abs(nextY - currY) > CANVAS_HEIGHT / 2) {
-                         ctx.moveTo(nextX, nextY);
-                     } else {
-                         ctx.lineTo(nextX, nextY);
-                     }
-                     
-                     currX = nextX;
-                     currY = nextY;
-                 }
-                 batchHasPaths = true;
-             }
-
-             if (batchHasPaths) {
-                 ctx.stroke();
+         // Cache parsed RGB values for the current frame
+         const colorCache: Record<string, {r:number, g:number, b:number}> = {};
+         for(const c of colors) {
+             if (c && !colorCache[c]) {
+                 const r = parseInt(c.slice(1, 3), 16);
+                 const g = parseInt(c.slice(3, 5), 16);
+                 const b = parseInt(c.slice(5, 7), 16);
+                 colorCache[c] = {r, g, b};
              }
          }
-         ctx.globalAlpha = 1.0;
+
+         for (let i = 0; i < count; i++) {
+             // Skip selected particle (drawn individually later with higher opacity)
+             if (i === activeSelectedIdx) continue;
+
+             const owner = owners[i];
+             const type = types[i];
+             
+             let colorIdx = 0;
+             if (owner === 1) colorIdx = type;
+             else if (owner === 2) colorIdx = 2 + type;
+             else colorIdx = 4;
+
+             const baseColorStr = colors[colorIdx] || '#ffffff';
+             const baseRGB = colorCache[baseColorStr] || {r: 255, g: 255, b: 255};
+
+             const vx = vel[i * 2];
+             const vy = vel[i * 2 + 1];
+             const speedSq = vx*vx + vy*vy;
+             
+             // Optimization: Skip very slow particles
+             if (speedSq < 0.2) continue;
+
+             // Determine Opacity based on Speed
+             let alpha = 0.3; 
+             if (speedSq > 9.0) alpha = 0.7;      // Fast
+             else if (speedSq > 2.25) alpha = 0.5; // Medium
+
+             // Color Variation based on Direction and Speed
+             const angle = Math.atan2(vy, vx); 
+             const shift = 40; // Intensity of color shift
+             const speedBoost = Math.min(1.3, 1.0 + speedSq * 0.02); // Brighter if faster
+             
+             // Modulate RGB channels with phase-shifted sines of the angle
+             const r = Math.max(0, Math.min(255, (baseRGB.r + Math.sin(angle) * shift) * speedBoost));
+             const g = Math.max(0, Math.min(255, (baseRGB.g + Math.sin(angle + 2.09) * shift) * speedBoost)); // +120 deg
+             const b = Math.max(0, Math.min(255, (baseRGB.b + Math.sin(angle + 4.18) * shift) * speedBoost)); // +240 deg
+
+             ctx.strokeStyle = `rgba(${r|0}, ${g|0}, ${b|0}, ${alpha})`;
+             
+             ctx.beginPath();
+             const baseIdx = i * stride;
+             let currX = history[baseIdx];
+             let currY = history[baseIdx + 1];
+             ctx.moveTo(currX, currY);
+
+             let hasPath = false;
+             for (let t = 1; t < TRAIL_LENGTH; t++) {
+                 const nextX = history[baseIdx + t*2];
+                 const nextY = history[baseIdx + t*2 + 1];
+                 
+                 // Wrap detection
+                 if (Math.abs(nextX - currX) > CANVAS_WIDTH / 2 || Math.abs(nextY - currY) > CANVAS_HEIGHT / 2) {
+                     ctx.moveTo(nextX, nextY);
+                 } else {
+                     ctx.lineTo(nextX, nextY);
+                     hasPath = true;
+                 }
+                 
+                 currX = nextX;
+                 currY = nextY;
+             }
+             
+             if (hasPath) ctx.stroke();
+         }
       }
 
       // Always draw trail for selected particle with higher visibility

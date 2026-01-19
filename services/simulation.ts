@@ -329,22 +329,22 @@ export class SimulationEngine {
           // X Axis Bounce
           if (pX < 0) {
              pX = 0;
-             vX *= -1;
+             vX *= -0.95; // Damped bounce
              bounced = true;
           } else if (pX > CANVAS_WIDTH) {
              pX = CANVAS_WIDTH;
-             vX *= -1;
+             vX *= -0.95; // Damped bounce
              bounced = true;
           }
 
           // Y Axis Bounce
           if (pY < 0) {
              pY = 0;
-             vY *= -1;
+             vY *= -0.95; // Damped bounce
              bounced = true;
           } else if (pY > CANVAS_HEIGHT) {
              pY = CANVAS_HEIGHT;
-             vY *= -1;
+             vY *= -0.95; // Damped bounce
              bounced = true;
           }
 

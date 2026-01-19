@@ -65,7 +65,22 @@ const Arena: React.FC<Props> = ({
         // Wait for initial spawn stabilization (e.g. first 20 frames or until total particles appear)
         // Usually initial total is high.
         if (total > 50) {
-           // Dominance check (3x size difference)
+           const initialCount = arenaConfig.particleCount * 2;
+
+           // Aggressive Victory (2x advantage + Growth via capture)
+           // If a player has doubled the opponent AND has more particles than they started with (showing net capture)
+           if (p1 > p2 * 2.0 && p1 > initialCount) {
+              setWinner('p1');
+              setMatchStatus('finished');
+              return;
+           }
+           if (p2 > p1 * 2.0 && p2 > initialCount) {
+              setWinner('p2');
+              setMatchStatus('finished');
+              return;
+           }
+
+           // Dominance check (3x size difference or critical failure)
            if (p1 > p2 * 3 || p2 < 10) {
               setWinner('p1');
               setMatchStatus('finished');

@@ -29,7 +29,7 @@ export const calculateMutationRate = (
      // HIGH DENSITY STALEMATE (Both > 50%)
      // The colonies are likely just clumping or looping safely. 
      // Needs a "Breaker" mutation to initiate combat.
-     if (myRatio > 0.5 && enemyRatio > 0.5) return 0.40;
+     if (myRatio > 0.5 && enemyRatio > 0.5) return 0.60; // Increased mutation for stalemates
      
      // MUTUAL DESTRUCTION (Both < 20%)
      // Both colonies are too aggressive or environment is too harsh.
@@ -37,7 +37,7 @@ export const calculateMutationRate = (
      if (myRatio < 0.2 && enemyRatio < 0.2) return 0.30;
      
      // Standard Draw
-     return 0.35; 
+     return 0.45; 
   }
   
   // LOSS
@@ -71,21 +71,18 @@ export const generateColonyDNA = async (
 
   const systemInstruction = `
     You are a biological engineer for a particle life simulation.
-    Your job is to configure the 'DNA' (attraction/repulsion forces) of a particle colony based on a description.
-    There are 2 types of particles in a colony: Type 0 (Soldier/Core) and Type 1 (Worker/Support).
+    Your job is to configure the 'DNA' (attraction/repulsion forces) of a particle colony.
     
-    You need to output two matrices:
-    1. internalMatrix (2x2): How the colony interacts with itself.
-       [[Force 0->0, Force 0->1], [Force 1->0, Force 1->1]]
-    2. externalMatrix (2x2): How the colony interacts with an ENEMY colony.
-       [[Force 0->Enemy0, Force 0->Enemy1], [Force 1->Enemy0, Force 1->Enemy1]]
+    CRITICAL PHYSICS RULES:
+    1. Force Range: -1.0 (Repel/Run Away) to 1.0 (Attract/Chase).
+    2. To ATTACK: You MUST set a POSITIVE (+) value in the 'externalMatrix' towards enemy types. 
+       - Example: If Type 0 is a Soldier, Type 0 -> Enemy 0 should be 0.8 (Chase).
+    3. To DEFEND: Set NEGATIVE (-) values to run away.
+    4. If you set all external forces to negative, the colony will just run away and stalemate.
     
-    Values range from -1.0 (Strong Repulsion) to 1.0 (Strong Attraction).
-    0.0 is neutral.
-    
-    Be creative. Aggressive colonies should have high negative values towards enemies.
-    Clumping colonies should have high positive internal values.
-    Swarming/chasing behavior comes from asymmetry (A likes B, B dislikes A).
+    Output two matrices:
+    1. internalMatrix (2x2): [[Self0->Self0, Self0->Self1], [Self1->Self0, Self1->Self1]]
+    2. externalMatrix (2x2): [[Self0->Enemy0, Self0->Enemy1], [Self1->Enemy0, Self1->Enemy1]]
   `;
 
   // Provide current state context
@@ -98,7 +95,7 @@ export const generateColonyDNA = async (
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Context: ${context}\n\nUser Request: "${promptText}"\n\nBased on the request, generate the new matrices. If the request implies modifying the current state (e.g. "more aggressive"), adjust the values accordingly. If it describes a new behavior, generate from scratch.`,
+      contents: `Context: ${context}\n\nUser Request: "${promptText}"\n\nBased on the request, generate the new matrices.`,
       config: {
         systemInstruction,
         responseMimeType: "application/json",
@@ -154,62 +151,67 @@ export const evolveColonyDNA = async (
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const systemInstruction = `
-    You are an autonomous evolutionary algorithm controlling a particle swarm colony in a battle simulation.
-    Your goal is to mutate the colony's force matrices to MAXIMIZE winning chances in the next round.
+    You are an autonomous evolutionary algorithm controlling a particle swarm colony.
+    Your goal is to MAXIMIZE winning chances. STALEMATES ARE FAILURES.
     
-    MUTATION PARAMETERS:
-    - Mutation Intensity: ${mutationIntensity.toFixed(2)} (Range: 0.0 - 1.0)
+    COMBAT MECHANICS:
+    - Particles "Capture" enemies by surrounding them.
+    - To win, your particles MUST move towards the enemy.
+    - **External Matrix Rule**: 
+      - Negative Value (-0.1 to -1.0) = FEAR / RUN AWAY.
+      - Positive Value (0.1 to 1.0) = AGGRESSION / CHASE.
+      - Zero = Neutral / Ignore.
     
-    Evolution Guidance based on Intensity:
-    - Low (0.0 - 0.2): CONSERVATIVE. Only tweak values by small amounts (+/- 0.1). Do not change the core behavior (e.g. if it clumps, keep it clumping).
-    - Medium (0.3 - 0.6): ADAPTIVE. Adjust strategy to counter specific threats. You can change attraction to repulsion if necessary.
-    - High (0.7 - 1.0): DRASTIC. The previous strategy failed. Try something completely new. Invert matrices or try extreme values.
+    STRATEGY GUIDE:
+    1. If the last match was a DRAW: You were too passive. You MUST increase positive attraction in 'externalMatrix' to hunt the enemy.
+    2. If you LOST: Analyze if you were overrun (increase defense/repulsion) or outmaneuvered (increase speed/attraction).
+    3. Types: Usually Type 0 is the "Core/Soldier" and Type 1 is "Support". Make Type 0 aggressive towards enemies.
     
-    Analysis Strategy:
-    - If you LOST: Analyze the opponent's DNA. Did they swarm you? Did they repel you? Adjust your external forces to counter them (e.g., run away or chase harder).
-    - If you WON: Refine the current strategy. Don't change too much, just optimize.
-    - If DRAW: You need to be more aggressive to force a win.
-    
-    CRITICAL: The next match will have specific Environmental Conditions (Friction, Gravity, Density).
-    You MUST adapt your DNA to survive in this environment. 
-    - High Friction: requires stronger propulsion (higher force values) to move.
-    - Low Friction: requires dampening or weaker forces to avoid loss of control.
-    - High Gravity/Force Multiplier: interactions are dangerous, be careful with repulsion.
-    - High Density: Collisions are frequent, maybe become more defensive or explosive.
+    Mutation Intensity: ${mutationIntensity.toFixed(2)}
+    - High Intensity means you should radically change the strategy (e.g., switch from clumping to swarming).
     
     Return the FULL JSON object with the updated 'internalMatrix' and 'externalMatrix'.
-    Also update the 'name' of the colony to reflect its evolution (e.g., "Cyan Swarm Mk II", "Heavy-Grav Adaptation").
+    Update the 'name' to reflect the evolution (e.g., "Cyan Hunter V2").
   `;
 
   let envInfo = "Standard Vacuum";
   if (nextArenaConfig) {
     envInfo = `
       ENVIRONMENT WARNING: ${nextArenaConfig.environmentName}
-      - Friction: ${nextArenaConfig.friction} (Normal is ~0.8)
+      - Friction: ${nextArenaConfig.friction} (Low friction = slippery, hard to stop)
       - Force Strength: ${nextArenaConfig.forceMultiplier}x
       - Particle Density: ${nextArenaConfig.particleCount} per type
-      - Interaction Radius: ${nextArenaConfig.interactionRadius}px
     `;
   }
 
+  let tacticalAdvice = "";
+  if (matchOutcome === 'DRAW') {
+      tacticalAdvice = "URGENT: The previous match was a stalemate. Your colony is too cowardly. You MUST set positive attraction values in the External Matrix to chase and destroy the enemy. Do not hide.";
+  } else if (matchOutcome === 'LOSS') {
+      tacticalAdvice = "You lost. If the enemy chased you, consider a counter-attack or faster evasion. If you died by clumping, increase internal repulsion.";
+  } else {
+      tacticalAdvice = "You won. Optimize efficiency. Maintain the aggressive edge.";
+  }
+
   const prompt = `
-    Last Match Report:
-    Outcome: ${matchOutcome}
-    My Particles Remaining: ${myCount}
-    Enemy Particles Remaining: ${enemyCount}
+    Last Match Outcome: ${matchOutcome}
+    My Survivors: ${myCount}
+    Enemy Survivors: ${enemyCount}
     
-    UPCOMING BATTLE CONDITIONS:
+    TACTICAL ORDER: ${tacticalAdvice}
+    
+    UPCOMING ENVIRONMENT:
     ${envInfo}
     
     My Current DNA:
     Internal: ${JSON.stringify(currentDNA.internalMatrix)}
     External: ${JSON.stringify(currentDNA.externalMatrix)}
     
-    Enemy DNA (The threat):
+    Enemy DNA (Intel):
     Internal: ${JSON.stringify(enemyDNA.internalMatrix)}
     External: ${JSON.stringify(enemyDNA.externalMatrix)}
     
-    Task: Evolve my DNA to beat this enemy in the UPCOMING environment. Apply a mutation intensity of ${mutationIntensity}.
+    Task: Evolve my DNA to destroy this enemy. Apply mutation intensity: ${mutationIntensity}.
   `;
 
   try {
