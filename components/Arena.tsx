@@ -3,7 +3,7 @@ import { ColonyDNA, MatchResult, ArenaConfig } from '../types';
 import { DEFAULT_ARENA_CONFIG } from '../constants';
 import SimulationView from './SimulationView';
 import { soundManager } from '../services/SoundService';
-import { Volume2, VolumeX, AlertOctagon, Activity, Swords, Shield } from 'lucide-react';
+import { Volume2, VolumeX, AlertOctagon, Activity, Swords, Shield, Zap } from 'lucide-react';
 
 interface Props {
   p1DNA: ColonyDNA;
@@ -35,6 +35,9 @@ const Arena: React.FC<Props> = ({
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
   const [isStagnated, setIsStagnated] = useState(false);
   
+  // Visual state for the power balance bar
+  const [balanceShake, setBalanceShake] = useState(0);
+  
   const tacticsRef = useRef({ 
       p1Retreat: false, 
       p2Retreat: false,
@@ -54,6 +57,7 @@ const Arena: React.FC<Props> = ({
   const stagnationCounterRef = useRef<number>(0);
   const distanceHistoryRef = useRef<number[]>([]);
   const lastPopCountRef = useRef<number>(0);
+  const prevDiffRef = useRef<number>(0);
   const hasTriggeredAutoEnd = useRef(false);
 
   useEffect(() => {
@@ -77,13 +81,22 @@ const Arena: React.FC<Props> = ({
   const handleStats = (p1: number, p2: number, p1Escaped: number, p2Escaped: number, fps: number, centroidDist: number, avgSpeed: number) => {
     setStats({ p1, p2, p1Escaped, p2Escaped, fps });
     
+    // Calculate Shake Intensity based on rate of change in balance
+    const currentDiff = p1 - p2;
+    const delta = Math.abs(currentDiff - prevDiffRef.current);
+    if (delta > 2) {
+        setBalanceShake(Math.min(10, delta * 2)); // Cap shaking
+    } else {
+        setBalanceShake(prev => Math.max(0, prev - 1)); // Decay shake
+    }
+    prevDiffRef.current = currentDiff;
+
     if (matchStatus === 'active') {
         const popChanged = Math.abs(p1 - lastPopCountRef.current) > 1; // Tolerance
         lastPopCountRef.current = p1;
         const elapsedTime = 90 - timeLeftRef.current;
 
         // Stagnation Detection Logic
-        // Only start checking stagnation after 10 seconds to allow initial deployment
         if (elapsedTime > 10) {
             if (popChanged) {
                 stagnationCounterRef.current = Math.max(0, stagnationCounterRef.current - 1);
@@ -92,14 +105,12 @@ const Arena: React.FC<Props> = ({
                 history.push(centroidDist);
                 if (history.length > 20) history.shift(); 
 
-                // Calculate variance in centroid distance to detect movement
                 let variance = 0;
                 if (history.length > 5) {
                     const mean = history.reduce((a, b) => a + b, 0) / history.length;
                     variance = history.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / history.length;
                 }
 
-                // Low variance AND reasonable distance means they are stuck staring at each other
                 if (variance < 50 && centroidDist > 100) {
                     stagnationCounterRef.current += 0.5;
                 } else if (avgSpeed < 0.3) {
@@ -118,7 +129,6 @@ const Arena: React.FC<Props> = ({
     }
 
     if (matchStatus === 'active' && !winner) {
-        // Absolute Wipeout Condition (Instant End)
         if (p1 === 0 && p2 > 0) {
             setWinner('p2');
             setMatchStatus('finished');
@@ -133,13 +143,7 @@ const Arena: React.FC<Props> = ({
         const total = p1 + p2;
         const elapsedTime = 90 - timeLeftRef.current;
 
-        // Mercy Rule / Decimation Logic
-        // We add a Grace Period of 15 seconds where we don't call mercy 
-        // to prevent bad spawns from ending the game instantly.
         if (elapsedTime > 15 && total > 50) {
-           const initialCount = arenaConfig.particleCount * 2;
-           
-           // If one side has 4x the other, call it.
            if (p1 > p2 * 4.0) { setWinner('p1'); setMatchStatus('finished'); return; }
            if (p2 > p1 * 4.0) { setWinner('p2'); setMatchStatus('finished'); return; }
         }
@@ -176,27 +180,16 @@ const Arena: React.FC<Props> = ({
            let ret = false;
            
            if (isStuck) {
-               // STAGNATION BREAKER: FLANKING MANEUVER
-               // Oscillate between Retreat (Spread) and Aggressive (Collapse)
                const cycle = Date.now() % 5000;
-               if (cycle < 2000) {
-                   ret = true; // Spread out to flank/surround
-               } else {
-                   agg = true; // Collapse on center
-               }
+               if (cycle < 2000) ret = true;
+               else agg = true;
            } else {
-               // DYNAMIC COMBAT
-               if (ratio > 1.25) {
-                   // Winning: Press advantage
-                   agg = true;
-               } else if (ratio < 0.75) {
-                   // Losing: Guerilla Tactics
-                   // Retreat to lure, then snap back
+               if (ratio > 1.25) agg = true;
+               else if (ratio < 0.75) {
                    const cycle = Date.now() % 4000;
                    if (cycle < 2000) ret = true;
                    else agg = true;
                } else {
-                   // Even Match: Probing Attacks
                    const cycle = Date.now() % 3000;
                    if (cycle > 2000) agg = true;
                }
@@ -221,7 +214,7 @@ const Arena: React.FC<Props> = ({
            p2Retreat: p2T.ret
        });
 
-    }, 500); // Fast reaction time
+    }, 500);
     return () => clearInterval(interval);
   }, [isAutoMode, matchStatus]);
 
@@ -251,7 +244,7 @@ const Arena: React.FC<Props> = ({
             }
             return prev - 1;
         });
-    }, 750); // 25% Faster (Standard is 1000ms)
+    }, 790); 
     return () => clearInterval(timer);
   }, [matchStatus, winner, rematchKey]);
 
@@ -288,7 +281,6 @@ const Arena: React.FC<Props> = ({
          <div className="flex flex-col items-start gap-2 pointer-events-auto">
             <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl border border-cyan-500/30 p-4 clip-tech-border min-w-[340px] shadow-lg transition-all duration-300">
                 <div className="flex flex-col items-center justify-center border-r border-white/10 pr-4 w-24">
-                    {/* Fixed Width for Score to prevent jitter */}
                     <span className="text-4xl font-black text-cyan-400 brand-font leading-none tabular-nums text-center w-full block">
                         {stats.p1}
                     </span>
@@ -337,7 +329,6 @@ const Arena: React.FC<Props> = ({
          <div className="flex flex-col items-end gap-2 pointer-events-auto text-right">
             <div className="flex flex-row-reverse items-center gap-4 bg-black/40 backdrop-blur-xl border border-pink-500/30 p-4 clip-tech-border min-w-[340px] shadow-lg transform scale-x-[-1] transition-all duration-300">
                 <div className="flex flex-col items-center justify-center border-r border-white/10 pr-4 transform scale-x-[-1] w-24">
-                    {/* Fixed Width for Score */}
                     <span className="text-4xl font-black text-pink-400 brand-font leading-none tabular-nums text-center w-full block">
                         {stats.p2}
                     </span>
@@ -375,16 +366,42 @@ const Arena: React.FC<Props> = ({
           </div>
       )}
 
-      {/* Footer Status */}
+      {/* Footer Status with Dynamic Effects */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[600px] z-20 pointer-events-none">
            <div className="flex justify-between items-center text-[10px] font-mono text-neutral-500 mb-2 uppercase tracking-widest">
                <span>Power Balance</span>
-               <span className="flex items-center gap-2"><Activity size={12}/> {stats.fps} FPS</span>
+               {/* Removed FPS Counter */}
+               <span className="flex items-center gap-2 text-white/40">SYSTEM OPTIMAL</span>
            </div>
-           <div className="h-1 bg-white/10 w-full relative">
-                <div className="absolute top-0 left-0 bottom-0 bg-cyan-500 blur-[2px] transition-all duration-500" style={{ width: getBarWidth(stats.p1, totalParticles) }}></div>
-                <div className="absolute top-0 right-0 bottom-0 bg-pink-500 blur-[2px] transition-all duration-500" style={{ width: getBarWidth(stats.p2, totalParticles) }}></div>
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-3 bg-white"></div>
+           
+           <div className="h-2 bg-black/50 w-full relative border border-white/10 overflow-hidden backdrop-blur-sm rounded-sm">
+                {/* P1 Bar */}
+                <div className="absolute top-0 left-0 bottom-0 bg-cyan-500/80 transition-all duration-300 ease-linear" style={{ width: getBarWidth(stats.p1, totalParticles) }}>
+                    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)] animate-[glitch-text_2s_infinite]"></div>
+                </div>
+                
+                {/* P2 Bar */}
+                <div className="absolute top-0 right-0 bottom-0 bg-pink-500/80 transition-all duration-300 ease-linear" style={{ width: getBarWidth(stats.p2, totalParticles) }}>
+                     <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)] animate-[glitch-text_2s_infinite_reverse]"></div>
+                </div>
+                
+                {/* Clash Point Spark Effect */}
+                <div 
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 w-2 h-6 bg-white mix-blend-overlay"
+                    style={{ 
+                        left: getBarWidth(stats.p1, totalParticles),
+                        boxShadow: `0 0 ${10 + balanceShake * 5}px ${5 + balanceShake * 2}px rgba(255, 255, 255, 0.8)`,
+                        transform: `translate(-50%, -50%) rotate(${balanceShake * 5}deg) scale(${1 + balanceShake * 0.1})`,
+                        opacity: 0.8 + Math.random() * 0.2
+                    }}
+                >
+                    {balanceShake > 2 && (
+                        <>
+                            <div className="absolute -top-4 -left-4 w-8 h-8 border border-white/50 rounded-full animate-ping"></div>
+                            <Zap size={16} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-yellow-300 fill-yellow-300 animate-pulse" />
+                        </>
+                    )}
+                </div>
            </div>
       </div>
 
@@ -402,6 +419,7 @@ const Arena: React.FC<Props> = ({
             p2Retreat={tacticsDisplay.p2Retreat}
             p1Aggressive={tacticsDisplay.p1Aggressive}
             p2Aggressive={tacticsDisplay.p2Aggressive}
+            disableInteraction={isAutoMode}
         />
 
         {matchStatus === 'countdown' && (

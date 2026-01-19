@@ -1,3 +1,4 @@
+
 export type PlayerId = 'player1' | 'player2';
 
 export interface ParticleConfig {
@@ -7,6 +8,7 @@ export interface ParticleConfig {
 
 export interface ColonyDNA {
   name: string;
+  strategyDescription?: string; // New: AI explains its strategy
   internalMatrix: number[][];
   externalMatrix: number[][];
   colorPalette: string[];
@@ -20,12 +22,21 @@ export interface ArenaConfig {
   environmentName: string;
 }
 
+export interface EvolutionStep {
+    matchId: number;
+    outcome: 'WIN' | 'LOSS' | 'DRAW';
+    opponentName: string;
+    strategyUsed: string;
+    survivors: number;
+}
+
 export interface PlayerProfile {
     id: string; // 'player1' or 'ai-xyz'
     dna: ColonyDNA;
     score: number;
     matchesPlayed: number;
     wins: number;
+    evolutionHistory: EvolutionStep[]; // New: Memory of past matches
 }
 
 export interface GameState {

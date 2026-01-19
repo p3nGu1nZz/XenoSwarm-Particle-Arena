@@ -8,7 +8,7 @@ interface Props {
   isDual?: boolean;
   p1Name?: string;
   p2Name?: string;
-  phase?: 'analyzing' | 'applying'; // New prop to control visual transition
+  phase?: 'analyzing' | 'applying'; 
 }
 
 const NeuroNetworkVisual: React.FC = () => {
@@ -115,8 +115,8 @@ const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage, isDual, p1
 
       <div className={`z-10 flex flex-col items-center max-w-4xl text-center space-y-8 p-12 bg-neutral-900/80 border border-cyan-500/30 backdrop-blur-md rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.15)] clip-tech-border transition-all duration-700 transform ${phase === 'applying' ? 'scale-105 border-cyan-400/50' : 'scale-100'}`}>
         
-        {/* Content Container - Fades slightly when phase changes to simulate reload */}
-        <div className={`transition-opacity duration-300 flex flex-col items-center gap-8 ${phase === 'analyzing' ? 'opacity-100' : 'opacity-90'}`}>
+        {/* Content Container - REMOVED OPACITY TRANSITION FOR STABILITY */}
+        <div className="flex flex-col items-center gap-8">
             {/* Animated Icon */}
             <div className="relative">
                 <div className={`absolute inset-0 blur-xl rounded-full animate-ping ${phase === 'applying' ? 'bg-green-500/20' : 'bg-cyan-500/20'}`}></div>

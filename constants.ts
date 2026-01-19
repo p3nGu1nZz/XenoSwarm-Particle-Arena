@@ -1,3 +1,4 @@
+
 import { ColonyDNA, ArenaConfig, PlayerProfile } from "./types";
 
 export const CANVAS_WIDTH = 1200;
@@ -18,6 +19,7 @@ export const PARTICLE_COUNT_PER_TYPE_TRAINING = 300; // Increased
 
 export const P1_DEFAULT_DNA: ColonyDNA = {
   name: "Cyan Swarm",
+  strategyDescription: "Balanced standard configuration",
   colorPalette: ["#00ffff", "#0088ff"], 
   internalMatrix: [[0.5, -0.2], [0.1, 1.0]],
   externalMatrix: [[0.6, -0.5], [0.3, -0.8]]
@@ -25,6 +27,7 @@ export const P1_DEFAULT_DNA: ColonyDNA = {
 
 export const P2_DEFAULT_DNA: ColonyDNA = {
   name: "Crimson Legion",
+  strategyDescription: "Aggressive close-range combat",
   colorPalette: ["#ff4400", "#ffaa00"],
   internalMatrix: [[0.8, 0.1], [-0.1, 0.5]],
   externalMatrix: [[0.8, 0.2], [-0.5, -1.0]]
@@ -65,6 +68,7 @@ export const generateAIPool = (count: number = 20): PlayerProfile[] => {
             id: `ai-${i}-${Date.now()}`,
             dna: {
                 name,
+                strategyDescription: isAggressive ? "Initial Aggressive Protocol" : "Initial Defensive Cluster",
                 colorPalette: colors,
                 internalMatrix: [
                     [isClumper ? randomInRange(0.5, 1.0) : randomInRange(-0.2, 0.5), randomInRange(-0.5, 0.5)],
@@ -77,7 +81,8 @@ export const generateAIPool = (count: number = 20): PlayerProfile[] => {
             },
             score: Math.floor(randomInRange(1000, 10000)), // Fake starting score
             matchesPlayed: Math.floor(randomInRange(5, 50)),
-            wins: Math.floor(randomInRange(0, 30))
+            wins: Math.floor(randomInRange(0, 30)),
+            evolutionHistory: []
         });
     }
     

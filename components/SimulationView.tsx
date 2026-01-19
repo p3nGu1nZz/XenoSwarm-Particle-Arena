@@ -21,7 +21,11 @@ interface Props {
   p2Retreat?: boolean;
   p1Aggressive?: boolean;
   p2Aggressive?: boolean;
+  disableInteraction?: boolean; // New prop to lock interaction
 }
+
+// Optimization: Render trails at lower resolution for "bloom" effect and higher performance
+const TRAIL_SCALE = 0.5;
 
 // SPRITE CACHE
 const particleSprites: Record<string, HTMLCanvasElement> = {};
@@ -31,7 +35,7 @@ const getParticleSprite = (color: string, radius: number): HTMLCanvasElement => 
   if (particleSprites[key]) return particleSprites[key];
 
   const canvas = document.createElement('canvas');
-  const size = radius * 12; // Larger for glow
+  const size = radius * 16; // Larger canvas for glow
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -39,22 +43,28 @@ const getParticleSprite = (color: string, radius: number): HTMLCanvasElement => 
 
   const center = size / 2;
 
-  // Outer Soft Glow
-  const grad = ctx.createRadialGradient(center, center, radius, center, center, radius * 5);
+  // 1. Wide faint glow
+  const grad = ctx.createRadialGradient(center, center, radius, center, center, radius * 8);
   grad.addColorStop(0, color);
   grad.addColorStop(1, 'transparent'); 
-
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.3;
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(center, center, radius * 5, 0, Math.PI * 2);
+  ctx.arc(center, center, radius * 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 2. Focused mid glow
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(center, center, radius * 2.5, 0, Math.PI * 2);
   ctx.fill();
   
-  // Inner Core
+  // 3. Solid White Core
   ctx.globalAlpha = 1.0;
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.arc(center, center, radius * 0.9, 0, Math.PI * 2);
+  ctx.arc(center, center, radius * 1.0, 0, Math.PI * 2);
   ctx.fill();
 
   particleSprites[key] = canvas;
@@ -75,7 +85,8 @@ const SimulationView: React.FC<Props> = ({
   p1Retreat = false,
   p2Retreat = false,
   p1Aggressive = false,
-  p2Aggressive = false
+  p2Aggressive = false,
+  disableInteraction = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trailCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -95,13 +106,15 @@ const SimulationView: React.FC<Props> = ({
   useEffect(() => {
     for (const key in particleSprites) delete particleSprites[key];
 
+    // Initialize Trail Buffer
     if (!trailCanvasRef.current) {
         trailCanvasRef.current = document.createElement('canvas');
-        trailCanvasRef.current.width = CANVAS_WIDTH;
-        trailCanvasRef.current.height = CANVAS_HEIGHT;
+        trailCanvasRef.current.width = CANVAS_WIDTH * TRAIL_SCALE;
+        trailCanvasRef.current.height = CANVAS_HEIGHT * TRAIL_SCALE;
     } else {
+        // Clear buffer on restart
         const tCtx = trailCanvasRef.current.getContext('2d');
-        tCtx?.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        tCtx?.clearRect(0, 0, CANVAS_WIDTH * TRAIL_SCALE, CANVAS_HEIGHT * TRAIL_SCALE);
     }
 
     const maxP = 2500; 
@@ -141,6 +154,7 @@ const SimulationView: React.FC<Props> = ({
   }, [p1Retreat, p2Retreat, p1Aggressive, p2Aggressive, mode]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (disableInteraction) return; // Locked in Gauntlet/Auto Mode
     if (!engineRef.current) return;
     
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -168,7 +182,7 @@ const SimulationView: React.FC<Props> = ({
     const ctx = canvas.getContext('2d', { alpha: false }); 
     if (!ctx) return;
 
-    // Cache Background
+    // Cache Hex Grid
     const bgCanvas = document.createElement('canvas');
     bgCanvas.width = CANVAS_WIDTH;
     bgCanvas.height = CANVAS_HEIGHT;
@@ -179,17 +193,19 @@ const SimulationView: React.FC<Props> = ({
         
         // Hex Grid
         bgCtx.strokeStyle = '#0a0a0f';
-        bgCtx.lineWidth = 2;
-        const hexSize = 60;
+        bgCtx.lineWidth = 1;
+        const hexSize = 50;
         
         bgCtx.beginPath();
+        // Draw vertical lines
         for(let x=0; x<=CANVAS_WIDTH; x+=hexSize) {
            bgCtx.moveTo(x, 0);
            bgCtx.lineTo(x, CANVAS_HEIGHT);
         }
-        for(let y=0; y<=CANVAS_HEIGHT; y+=hexSize) {
-           bgCtx.moveTo(0, y);
-           bgCtx.lineTo(CANVAS_WIDTH, y);
+        // Draw angled lines to simulate hex grid approximation or just tri-grid for alien feel
+        for (let x = -CANVAS_HEIGHT; x < CANVAS_WIDTH; x += hexSize) {
+             bgCtx.moveTo(x, 0);
+             bgCtx.lineTo(x + CANVAS_HEIGHT, CANVAS_HEIGHT);
         }
         bgCtx.stroke();
     }
@@ -205,10 +221,51 @@ const SimulationView: React.FC<Props> = ({
         soundManager.playBatch(engine.frameEvents);
       }
 
+      // 1. Draw Base Grid
       ctx.drawImage(bgCanvas, 0, 0);
+      
+      // 2. Drone Vision / Radar Sweep Effect
+      // Calculate radar rotation based on time
+      const radarAngle = (time * 0.0005) % (Math.PI * 2);
+      
+      // Create a gradient that sweeps
+      const cx = CANVAS_WIDTH / 2;
+      const cy = CANVAS_HEIGHT / 2;
+      const sweepRadius = Math.max(CANVAS_WIDTH, CANVAS_HEIGHT);
+      
+      const gradient = ctx.createLinearGradient(
+          cx + Math.cos(radarAngle) * -sweepRadius, 
+          cy + Math.sin(radarAngle) * -sweepRadius,
+          cx + Math.cos(radarAngle) * sweepRadius, 
+          cy + Math.sin(radarAngle) * sweepRadius
+      );
+      
+      gradient.addColorStop(0, 'transparent');
+      gradient.addColorStop(0.5, 'transparent');
+      gradient.addColorStop(0.51, 'rgba(0, 255, 100, 0.05)'); // Leading edge
+      gradient.addColorStop(1, 'transparent');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+      // 3. Static Grain (Drone Camera Noise)
+      if (Math.random() > 0.5) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.02})`;
+          ctx.fillRect(0, Math.random() * CANVAS_HEIGHT, CANVAS_WIDTH, Math.random() * 10);
+      }
+      
+      // Vignette (Dark Corners)
+      const vignette = ctx.createRadialGradient(cx, cy, sweepRadius * 0.4, cx, cy, sweepRadius * 0.8);
+      vignette.addColorStop(0, 'transparent');
+      vignette.addColorStop(1, 'rgba(0,0,0,0.8)');
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
 
       if (mode === 'arena') {
-         ctx.strokeStyle = '#222';
+         // Subtle pulsing border
+         const pulse = 0.5 + Math.sin(time * 0.002) * 0.2;
+         ctx.strokeStyle = `rgba(30, 30, 30, ${pulse})`;
          ctx.lineWidth = 4;
          ctx.strokeRect(2, 2, CANVAS_WIDTH - 4, CANVAS_HEIGHT - 4);
       }
@@ -221,30 +278,43 @@ const SimulationView: React.FC<Props> = ({
       const history = engine.trailHistory;
       const stride = TRAIL_LENGTH * 2;
 
-      // Draw Trails
+      // Draw Trails (Optimized with dedicated buffer & scaling)
       if (showTrails && trailCanvasRef.current) {
          const tCtx = trailCanvasRef.current.getContext('2d');
          if (tCtx) {
+             // 1. Fade Out (Accumulation)
              tCtx.globalCompositeOperation = 'source-over';
-             tCtx.fillStyle = 'rgba(2, 2, 3, 0.2)'; 
-             tCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+             tCtx.fillStyle = 'rgba(2, 2, 3, 0.15)'; 
+             // Reset transform to ensure we fill the physical buffer
+             tCtx.setTransform(1, 0, 0, 1, 0, 0);
+             tCtx.fillRect(0, 0, trailCanvasRef.current.width, trailCanvasRef.current.height);
 
+             // 2. Draw New Segments
+             // Apply scaling for low-res buffer
+             tCtx.scale(TRAIL_SCALE, TRAIL_SCALE);
              tCtx.globalCompositeOperation = 'lighter';
-             tCtx.lineWidth = 1.5;
+             tCtx.lineWidth = 2.0; // Thicker lines for downscaling compensation
 
              const colorCache: string[] = [];
              for(const c of colors) colorCache.push(c || '#fff');
 
              let lastColorIdx = -1;
+             
+             // Begin batch
+             tCtx.beginPath();
 
              for (let i = 0; i < count; i++) {
+                 // Skip static particles to save cycles
                  const baseIdx = i * stride;
                  const currX = history[baseIdx + (TRAIL_LENGTH-1)*2];
                  const currY = history[baseIdx + (TRAIL_LENGTH-1)*2 + 1];
                  const prevX = history[baseIdx + (TRAIL_LENGTH-2)*2];
                  const prevY = history[baseIdx + (TRAIL_LENGTH-2)*2 + 1];
 
-                 if (Math.abs(currX - prevX) < 0.1 || Math.abs(currX - prevX) > 100) continue;
+                 // Squared distance check for performance
+                 const dx = currX - prevX;
+                 const dy = currY - prevY;
+                 if (dx*dx + dy*dy < 0.25 || Math.abs(dx) > 100) continue;
 
                  const owner = owners[i];
                  const type = types[i];
@@ -253,10 +323,13 @@ const SimulationView: React.FC<Props> = ({
                  else if (owner === 2) colorIdx = 2 + type;
                  else colorIdx = 4;
 
+                 // Batch State Changes
                  if (colorIdx !== lastColorIdx) {
-                     if (lastColorIdx !== -1) tCtx.stroke(); 
+                     if (lastColorIdx !== -1) {
+                         tCtx.stroke();
+                         tCtx.beginPath();
+                     }
                      tCtx.strokeStyle = colorCache[colorIdx];
-                     tCtx.beginPath();
                      lastColorIdx = colorIdx;
                  }
 
@@ -265,8 +338,9 @@ const SimulationView: React.FC<Props> = ({
              }
              if (lastColorIdx !== -1) tCtx.stroke();
              
+             // 3. Composite Buffer to Main Screen
              ctx.globalCompositeOperation = 'screen'; 
-             ctx.drawImage(trailCanvasRef.current, 0, 0);
+             ctx.drawImage(trailCanvasRef.current, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
          }
       }
 
@@ -275,9 +349,18 @@ const SimulationView: React.FC<Props> = ({
         ctx.globalCompositeOperation = 'lighter'; // Additive blending for glow
         for(const eff of engine.effects) {
             ctx.globalAlpha = eff.life;
-            ctx.fillStyle = eff.color;
+            ctx.strokeStyle = eff.color;
+            ctx.lineWidth = eff.size; 
             ctx.beginPath();
-            ctx.arc(eff.x, eff.y, 2.5, 0, Math.PI*2);
+            ctx.moveTo(eff.x, eff.y);
+            // Motion blur tail
+            ctx.lineTo(eff.x - eff.vx * 2, eff.y - eff.vy * 2);
+            ctx.stroke();
+            
+            // Dot at head
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(eff.x, eff.y, 1, 0, Math.PI*2);
             ctx.fill();
         }
         ctx.globalAlpha = 1.0;
@@ -298,10 +381,12 @@ const SimulationView: React.FC<Props> = ({
         const color = colors[colorIdx] || '#fff';
         const radius = type === 0 ? 3 : 2; 
 
-        const sprite = getParticleSprite(color, radius);
+        // Integer coordinates for crisp rendering
         const px = (pos[i * 2] | 0);
         const py = (pos[i * 2 + 1] | 0);
-        const offset = radius * 6; // Half of sprite size (radius * 12)
+        
+        const sprite = getParticleSprite(color, radius);
+        const offset = radius * 8; // Offset based on new sprite size center
 
         ctx.drawImage(sprite, px - offset, py - offset);
       }
@@ -317,9 +402,10 @@ const SimulationView: React.FC<Props> = ({
             const py = pos[i * 2 + 1];
             const fx = forces[i*2];
             const fy = forces[i*2+1];
-            const mag = Math.sqrt(fx*fx + fy*fy);
+            const magSq = fx*fx + fy*fy;
             
-            if (mag > 0.05) {
+            if (magSq > 0.0025) { // mag > 0.05
+                const mag = Math.sqrt(magSq);
                 const alpha = Math.min(mag * 0.5, 0.4);
                 ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
                 ctx.lineWidth = 1;
@@ -433,7 +519,7 @@ const SimulationView: React.FC<Props> = ({
            ref={canvasRef} 
            width={CANVAS_WIDTH} 
            height={CANVAS_HEIGHT}
-           className="w-full h-full block bg-neutral-950 cursor-crosshair relative z-10"
+           className={`w-full h-full block bg-neutral-950 relative z-10 ${disableInteraction ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
            onClick={handleCanvasClick}
          />
          
@@ -456,11 +542,6 @@ const SimulationView: React.FC<Props> = ({
 
          {/* Screen Effects */}
          <div className="absolute inset-0 pointer-events-none z-10 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[size:100%_4px] opacity-20"></div>
-         <div className="absolute inset-0 pointer-events-none z-10"
-              style={{
-                background: 'radial-gradient(circle, transparent 50%, rgba(0,0,0,0.7) 100%)',
-              }}
-         ></div>
        </div>
     </div>
   );

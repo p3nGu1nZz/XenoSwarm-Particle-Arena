@@ -28,7 +28,7 @@ const LeaderboardScene: React.FC<Props> = ({
   const [prevRanks, setPrevRanks] = useState<Record<string, number>>({});
   
   const [phase, setPhase] = useState<'counting' | 'resorting' | 'final'>('counting');
-  const [autoTimer, setAutoTimer] = useState(6); // Increased slightly for animation
+  const [autoTimer, setAutoTimer] = useState(8); // Increased time (7s + 1s extra)
 
   // Initialize Leaderboard with PREVIOUS scores to start the animation
   useEffect(() => {

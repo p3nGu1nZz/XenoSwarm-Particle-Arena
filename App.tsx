@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { ColonyDNA, GameState, PlayerId, MatchResult, ArenaConfig, PlayerProfile } from './types';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { ColonyDNA, GameState, PlayerId, MatchResult, ArenaConfig, PlayerProfile, EvolutionStep } from './types';
 import { P1_DEFAULT_DNA, P2_DEFAULT_DNA, DEFAULT_ARENA_CONFIG, generateAIPool } from './constants';
 import { evolveColonyDNA, calculateMutationRate } from './services/geminiService';
 import { calculateMatchScore } from './services/scoringService';
@@ -13,20 +14,29 @@ import { Cpu, Users, Sword, BrainCircuit, Activity, Gamepad2, Globe, ShieldAlert
 
 const SceneTransition: React.FC<{ children: React.ReactNode, sceneKey: string }> = ({ children, sceneKey }) => {
     const [displayChildren, setDisplayChildren] = useState(children);
-    const [opacity, setOpacity] = useState(0);
+    const [opacity, setOpacity] = useState(1);
+    const prevKeyRef = useRef(sceneKey);
 
     useEffect(() => {
-        setOpacity(0);
-        const timer = setTimeout(() => {
+        if (sceneKey !== prevKeyRef.current) {
+            // Scene changed: Fade Out -> Wait -> Update -> Fade In
+            setOpacity(0);
+            const timer = setTimeout(() => {
+                prevKeyRef.current = sceneKey;
+                setDisplayChildren(children);
+                setOpacity(1);
+            }, 300);
+            return () => clearTimeout(timer);
+        } else {
+            // Same scene: Update content immediately, keep Opacity 1 (No Flicker)
             setDisplayChildren(children);
-            setOpacity(1);
-        }, 300); // Wait for fade out
-        return () => clearTimeout(timer);
+            setOpacity(1); 
+        }
     }, [sceneKey, children]);
 
     return (
         <div 
-            className="w-full h-full transition-opacity duration-500 ease-in-out"
+            className="w-full h-full transition-opacity duration-300 ease-in-out"
             style={{ opacity }}
         >
             {displayChildren}
@@ -160,7 +170,7 @@ const App: React.FC = () => {
         };
         setGameState(prev => ({
             ...prev,
-            leaderboardData: { lastMatch: result, player1Profile: { id: 'p1', dna: gameState.player1, score: 0, matchesPlayed: 0, wins: 0 }, player2Profile: { id: 'p2', dna: gameState.player2, score: 0, matchesPlayed: 0, wins: 0 } },
+            leaderboardData: { lastMatch: result, player1Profile: { id: 'p1', dna: gameState.player1, score: 0, matchesPlayed: 0, wins: 0, evolutionHistory: [] }, player2Profile: { id: 'p2', dna: gameState.player2, score: 0, matchesPlayed: 0, wins: 0, evolutionHistory: [] } },
             activeScene: 'leaderboard'
         }));
         return;
@@ -200,7 +210,7 @@ const App: React.FC = () => {
 
      // Prepare Profiles for Leaderboard
      // We pass the *updated* stats to the leaderboard, it will handle calculating the delta for animation
-     const lbP1 = activeProfileP1 || { id: 'player1', dna: gameState.player1, score: playerScore + scoreP1, matchesPlayed: matchHistory.length + 1, wins: 0 };
+     const lbP1 = activeProfileP1 || { id: 'player1', dna: gameState.player1, score: playerScore + scoreP1, matchesPlayed: matchHistory.length + 1, wins: 0, evolutionHistory: [] };
      const lbP2 = activeProfileP2!; 
 
      setGameState(prev => ({
@@ -225,7 +235,7 @@ const App: React.FC = () => {
       setArenaConfig(nextConfig);
 
       setEvolutionPhase('analyzing'); // Start Phase 1
-      setEvolutionStatus("ANALYZING COMBAT DATA...");
+      setEvolutionStatus("ANALYZING BATTLE METRICS...");
       setGameState(prev => ({ ...prev, activeScene: 'evolution' }));
 
       // --- GAUNTLET MODE LOGIC ---
@@ -238,24 +248,45 @@ const App: React.FC = () => {
           const outcomeP2 = lastMatch.winner === 'p2' ? 'WIN' : lastMatch.winner === 'p1' ? 'LOSS' : 'DRAW';
           const mutationP2 = calculateMutationRate(outcomeP2, lastMatch.p2Count, lastMatch.p1Count, initialPerPlayer, lastMatch.duration);
 
+          // Update Histories *Before* Evolution so the AI knows about this match
+          const p1HistoryStep: EvolutionStep = {
+              matchId: lastMatch.id,
+              outcome: outcomeP1,
+              opponentName: activeProfileP2.dna.name,
+              strategyUsed: activeProfileP1.dna.strategyDescription || "Unknown",
+              survivors: lastMatch.p1Count
+          };
+
+          const p2HistoryStep: EvolutionStep = {
+              matchId: lastMatch.id,
+              outcome: outcomeP2,
+              opponentName: activeProfileP1.dna.name,
+              strategyUsed: activeProfileP2.dna.strategyDescription || "Unknown",
+              survivors: lastMatch.p2Count
+          };
+
+          // Append to local history for prompt context
+          const p1FullHistory = [...activeProfileP1.evolutionHistory, p1HistoryStep];
+          const p2FullHistory = [...activeProfileP2.evolutionHistory, p2HistoryStep];
+
           try {
-              // Evolve Both concurrently
+              // Evolve Both concurrently with Memory
               const [newDna1, newDna2] = await Promise.all([
-                  evolveColonyDNA(activeProfileP1.dna, outcomeP1, lastMatch.p1Count, lastMatch.p2Count, activeProfileP2.dna, nextConfig, mutationP1),
-                  evolveColonyDNA(activeProfileP2.dna, outcomeP2, lastMatch.p2Count, lastMatch.p1Count, activeProfileP1.dna, nextConfig, mutationP2)
+                  evolveColonyDNA(activeProfileP1.dna, outcomeP1, lastMatch.p1Count, lastMatch.p2Count, activeProfileP2.dna, nextConfig, mutationP1, p1FullHistory),
+                  evolveColonyDNA(activeProfileP2.dna, outcomeP2, lastMatch.p2Count, lastMatch.p1Count, activeProfileP1.dna, nextConfig, mutationP2, p2FullHistory)
               ]);
 
               // Trigger Phase 2 Visuals
               setEvolutionPhase('applying');
-              setEvolutionStatus("APPLYING GENETIC MUTATIONS...");
+              setEvolutionStatus("INTEGRATING NEURAL PATHWAYS...");
 
               // Brief pause to let user see "Applying"
               await new Promise(r => setTimeout(r, 1500));
 
-              // Update Pool
+              // Update Pool with NEW DNA and UPDATED HISTORY
               setAiPool(prev => prev.map(p => {
-                  if (p.id === activeProfileP1.id) return { ...p, dna: newDna1 };
-                  if (p.id === activeProfileP2.id) return { ...p, dna: newDna2 };
+                  if (p.id === activeProfileP1.id) return { ...p, dna: newDna1, evolutionHistory: p1FullHistory };
+                  if (p.id === activeProfileP2.id) return { ...p, dna: newDna2, evolutionHistory: p2FullHistory };
                   return p;
               }));
 
@@ -274,7 +305,7 @@ const App: React.FC = () => {
               });
 
               // Transition to Arena
-              setEvolutionStatus("MATCHMAKING COMPLETE");
+              setEvolutionStatus("GENERATION COMPLETE");
               await new Promise(r => setTimeout(r, 500));
               
               setActiveProfileP1(nextAgent1);
@@ -282,7 +313,7 @@ const App: React.FC = () => {
               
               setGameState(prev => ({ 
                   ...prev, 
-                  player1: nextAgent1.dna, // Usually redundant if we updated pool, but safe
+                  player1: nextAgent1.dna, 
                   player2: nextAgent2.dna, 
                   activeScene: 'arena' 
               }));
@@ -303,6 +334,7 @@ const App: React.FC = () => {
           const mutation = calculateMutationRate(outcome, lastMatch.p1Count, lastMatch.p2Count, arenaConfig.particleCount * 2, lastMatch.duration);
           
           try {
+              // Standard evolution without memory for player (since we don't track player profile fully yet)
               const newP1DNA = await evolveColonyDNA(
                   gameState.player1, outcome, lastMatch.p1Count, lastMatch.p2Count, activeProfileP2!.dna, nextConfig, mutation
               );
@@ -370,7 +402,7 @@ const App: React.FC = () => {
 
   // --- RENDER MENU / LOBBY ---
   const renderLocalLobby = () => (
-    <div className="z-10 w-full max-w-6xl p-8 flex flex-col items-center">
+    <div className="z-10 w-full max-w-6xl p-8 flex flex-col items-center active-scanline">
         <header className="mb-12 text-center">
             <h2 className="text-6xl font-black brand-font text-white mb-2 text-glow-white tracking-tighter">LOCAL LOBBY</h2>
             <div className="h-1 w-32 bg-white mx-auto mb-4"></div>
@@ -417,32 +449,32 @@ const App: React.FC = () => {
   );
 
   const renderMainMenu = () => (
-    <div className="z-10 w-full max-w-7xl p-8 relative flex items-center justify-between h-[80vh]">
-        <div className="flex flex-col items-start justify-center space-y-8 max-w-2xl">
-            <div className="relative">
+    <div className="relative z-10 w-full max-w-7xl px-12 flex items-center justify-between h-[80vh] active-scanline">
+        <div className="flex flex-col items-start justify-center space-y-8 max-w-xl z-20 relative pointer-events-none">
+            <div className="relative pointer-events-auto">
                 <div className="absolute -left-12 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-cyan-500 to-transparent opacity-50"></div>
-                <h1 className="text-[8rem] font-black text-white brand-font tracking-tighter italic leading-none" style={{ textShadow: "0 0 40px rgba(0,243,255,0.3)" }}>
+                <h1 className="text-[7rem] lg:text-[8rem] font-black text-white brand-font tracking-tighter italic leading-none" style={{ textShadow: "0 0 40px rgba(0,243,255,0.3)" }}>
                   XENO<span className="block text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 -mt-4">SWARM</span>
                 </h1>
                 <div className="flex items-center gap-4 mt-2 ml-2">
-                    <span className="bg-cyan-500 text-black px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest">v3.1 Enhanced</span>
+                    <span className="bg-cyan-500 text-black px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest">v3.3 Memory Enabled</span>
                     <p className="text-xl text-cyan-200 font-light tracking-[0.4em] uppercase brand-font">Particle Arena</p>
                 </div>
             </div>
             
-            <p className="text-neutral-400 font-mono max-w-md leading-relaxed border-l border-white/10 pl-4">
+            <p className="text-neutral-400 font-mono max-w-md leading-relaxed border-l border-white/10 pl-4 pointer-events-auto">
                 Engineer the ultimate particle colony. Optimize DNA matrices for swarm behavior. 
-                Experience the new Neural Evolution Engine.
+                Experience the new Neural Evolution Engine with persistent memory.
             </p>
 
-            <div className="flex gap-8 text-neutral-500 font-mono text-xs">
+            <div className="flex gap-8 text-neutral-500 font-mono text-xs pointer-events-auto">
                 <div className="flex items-center gap-2"><Globe size={14} /> <span>Global Ranking: Online</span></div>
                 <div className="flex items-center gap-2"><ShieldAlert size={14} /> <span>Security: Max</span></div>
                 <div className="flex items-center gap-2"><Activity size={14} /> <span>Ping: 12ms</span></div>
             </div>
         </div>
 
-        <div className="w-[450px] relative perspective-[1000px] group/menu">
+        <div className="w-[450px] relative perspective-[1000px] group/menu z-10">
             <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 blur-xl opacity-0 group-hover/menu:opacity-100 transition-opacity duration-1000 rounded-3xl"></div>
             <div className="relative bg-black/60 backdrop-blur-xl border border-white/10 p-8 clip-tech-border shadow-2xl flex flex-col gap-6 transform transition-transform duration-500 group-hover/menu:rotate-y-2">
                 <div className="flex items-center justify-between border-b border-white/10 pb-4">

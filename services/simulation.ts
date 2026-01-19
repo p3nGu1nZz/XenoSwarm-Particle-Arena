@@ -21,6 +21,7 @@ export interface EffectParticle {
     vy: number;
     life: number; // 0.0 to 1.0
     color: string;
+    size: number;
 }
 
 export class SimulationEngine {
@@ -201,17 +202,18 @@ export class SimulationEngine {
   }
 
   spawnExplosion(x: number, y: number, color: string) {
-      const particleCount = 6;
+      const particleCount = 12; // Increased from 6
       for(let i=0; i<particleCount; i++) {
           const angle = Math.random() * Math.PI * 2;
-          const speed = Math.random() * 4 + 1;
+          const speed = Math.random() * 6 + 2; // Faster initial burst
           this.effects.push({
               x: x,
               y: y,
               vx: Math.cos(angle) * speed,
               vy: Math.sin(angle) * speed,
               life: 1.0,
-              color: color
+              color: color,
+              size: Math.random() * 2 + 1
           });
       }
   }
@@ -421,9 +423,10 @@ export class SimulationEngine {
         const p = this.effects[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.life -= 0.05;
-        p.vx *= 0.9;
-        p.vy *= 0.9;
+        p.vx *= 0.92; // Drag
+        p.vy *= 0.92;
+        p.life -= 0.03;
+        
         if(p.life <= 0) {
             this.effects.splice(i, 1);
         }
