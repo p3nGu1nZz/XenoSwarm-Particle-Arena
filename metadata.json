@@ -1,0 +1,5 @@
+{
+  "name": "XenoSwarm: Particle Arena",
+  "description": "A GPU-style particle life strategy game. Engineer your particle colony's DNA, train them in simulation, and battle against other colonies in the Xeno Arena to capture the swarm.",
+  "requestFramePermissions": []
+}
