@@ -1,10 +1,13 @@
 import React, { useRef, useEffect } from 'react';
-import { BrainCircuit, Wind, Zap, Users, Loader2, Disc } from 'lucide-react';
+import { BrainCircuit, Wind, Zap, Users, Loader2, Disc, Dna } from 'lucide-react';
 import { ArenaConfig } from '../types';
 
 interface Props {
   arenaConfig: ArenaConfig;
   statusMessage: string;
+  isDual?: boolean;
+  p1Name?: string;
+  p2Name?: string;
 }
 
 const NeuroNetworkVisual: React.FC = () => {
@@ -27,13 +30,14 @@ const NeuroNetworkVisual: React.FC = () => {
         resize();
 
         // Nodes
-        const nodes: {x: number, y: number, r: number, pulse: number}[] = [];
-        for(let i=0; i<30; i++) {
+        const nodes: {x: number, y: number, r: number, pulse: number, color: string}[] = [];
+        for(let i=0; i<40; i++) {
             nodes.push({
                 x: Math.random() * canvas.width,
                 y: Math.random() * canvas.height,
                 r: Math.random() * 3 + 2,
-                pulse: Math.random() * Math.PI
+                pulse: Math.random() * Math.PI,
+                color: Math.random() > 0.5 ? '#06b6d4' : '#f97316' // Cyan or Orange nodes
             });
         }
 
@@ -52,7 +56,7 @@ const NeuroNetworkVisual: React.FC = () => {
                 const r = n1.r + Math.sin(n1.pulse) * 1;
 
                 // Draw Node
-                ctx.fillStyle = '#06b6d4'; // Cyan
+                ctx.fillStyle = n1.color; 
                 ctx.beginPath();
                 ctx.arc(n1.x, n1.y, Math.max(1, r), 0, Math.PI * 2);
                 ctx.fill();
@@ -62,22 +66,24 @@ const NeuroNetworkVisual: React.FC = () => {
                     const n2 = nodes[j];
                     const dist = Math.hypot(n1.x - n2.x, n1.y - n2.y);
                     if (dist < 150) {
-                        ctx.strokeStyle = `rgba(6, 182, 212, ${1 - dist/150})`;
+                        ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 * (1 - dist/150)})`;
                         ctx.beginPath();
                         ctx.moveTo(n1.x, n1.y);
                         ctx.lineTo(n2.x, n2.y);
                         ctx.stroke();
 
                         // Data Packet
-                        const time = Date.now() * 0.002;
-                        const offset = (time + i*10) % 1; 
-                        const px = n1.x + (n2.x - n1.x) * offset;
-                        const py = n1.y + (n2.y - n1.y) * offset;
-                        
-                        ctx.fillStyle = '#fff';
-                        ctx.beginPath();
-                        ctx.arc(px, py, 1.5, 0, Math.PI*2);
-                        ctx.fill();
+                        if (Math.random() < 0.05) {
+                            const time = Date.now() * 0.002;
+                            const offset = (time + i*10) % 1; 
+                            const px = n1.x + (n2.x - n1.x) * offset;
+                            const py = n1.y + (n2.y - n1.y) * offset;
+                            
+                            ctx.fillStyle = n1.color === '#06b6d4' ? '#a5f3fc' : '#fed7aa';
+                            ctx.beginPath();
+                            ctx.arc(px, py, 1.5, 0, Math.PI*2);
+                            ctx.fill();
+                        }
                     }
                 }
             }
@@ -94,7 +100,7 @@ const NeuroNetworkVisual: React.FC = () => {
     return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-40" />;
 };
 
-const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage }) => {
+const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage, isDual, p1Name, p2Name }) => {
   return (
     <div className="w-full h-screen bg-[#050505] flex flex-col items-center justify-center relative overflow-hidden">
       {/* Neuro Visualizer Background */}
@@ -106,7 +112,7 @@ const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage }) => {
          <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.5)_2px,transparent_2px),linear-gradient(90deg,rgba(0,0,0,0.5)_2px,transparent_2px)] bg-[size:50px_50px] opacity-20"></div>
       </div>
 
-      <div className="z-10 flex flex-col items-center max-w-2xl text-center space-y-8 p-12 bg-neutral-900/80 border border-cyan-500/30 backdrop-blur-md rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.15)] clip-tech-border animate-in zoom-in-95 duration-500">
+      <div className="z-10 flex flex-col items-center max-w-4xl text-center space-y-8 p-12 bg-neutral-900/80 border border-cyan-500/30 backdrop-blur-md rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.15)] clip-tech-border animate-in zoom-in-95 duration-500">
         
         {/* Animated Icon */}
         <div className="relative">
@@ -116,16 +122,31 @@ const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage }) => {
 
         <div>
             <h2 className="text-4xl font-bold brand-font text-white mb-2 tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
-                NEURAL EVOLUTION
+                {isDual ? "MULTI-AGENT EVOLUTION" : "NEURAL EVOLUTION"}
             </h2>
             <div className="h-1 w-24 bg-gradient-to-r from-cyan-500 to-transparent mx-auto mb-4"></div>
             <p className="text-cyan-400 font-mono text-sm animate-pulse">
                 {statusMessage || "Optimizing Colony DNA..."}
             </p>
         </div>
+        
+        {isDual && (
+            <div className="flex justify-center gap-12 w-full">
+                <div className="flex flex-col items-center gap-2 opacity-80">
+                    <Dna className="text-cyan-400 animate-spin-slow" size={32} />
+                    <span className="text-xs font-mono text-cyan-200">{p1Name || "Agent A"}</span>
+                    <span className="text-[10px] text-neutral-500">Reconfiguring...</span>
+                </div>
+                 <div className="flex flex-col items-center gap-2 opacity-80">
+                    <Dna className="text-orange-400 animate-spin-slow" size={32} />
+                    <span className="text-xs font-mono text-orange-200">{p2Name || "Agent B"}</span>
+                    <span className="text-[10px] text-neutral-500">Reconfiguring...</span>
+                </div>
+            </div>
+        )}
 
         {/* Environment Preview Card */}
-        <div className="w-full bg-black/60 border border-white/10 rounded-xl p-6 text-left relative overflow-hidden group">
+        <div className="w-full bg-black/60 border border-white/10 rounded-xl p-6 text-left relative overflow-hidden group min-w-[300px]">
             <div className="absolute top-0 right-0 p-2 text-[10px] text-neutral-600 font-mono">NEXT_MATCH_CONFIG</div>
             
             <h3 className="text-neutral-500 text-xs uppercase tracking-widest mb-4 border-b border-white/5 pb-2">

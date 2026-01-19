@@ -9,7 +9,7 @@ import Arena from './components/Arena';
 import EvolutionView from './components/EvolutionView';
 import LeaderboardScene from './components/LeaderboardScene';
 import Button from './components/Button';
-import { Cpu, Users, Sword, BrainCircuit, Activity, Gamepad2, Globe, ShieldAlert } from 'lucide-react';
+import { Cpu, Users, Sword, BrainCircuit, Activity, Gamepad2, Globe, ShieldAlert, Infinity } from 'lucide-react';
 
 const SceneTransition: React.FC<{ children: React.ReactNode, sceneKey: string }> = ({ children, sceneKey }) => {
     const [displayChildren, setDisplayChildren] = useState(children);
@@ -60,8 +60,12 @@ const App: React.FC = () => {
   const [p2Ready, setP2Ready] = useState(false);
   
   const [aiPool, setAiPool] = useState<PlayerProfile[]>([]);
-  const [currentOpponent, setCurrentOpponent] = useState<PlayerProfile | null>(null);
-  const [playerScore, setPlayerScore] = useState(0);
+  
+  // Track specific profiles for the current match
+  const [activeProfileP1, setActiveProfileP1] = useState<PlayerProfile | null>(null);
+  const [activeProfileP2, setActiveProfileP2] = useState<PlayerProfile | null>(null);
+
+  const [playerScore, setPlayerScore] = useState(0); // Only for Campaign Mode
   const [matchHistory, setMatchHistory] = useState<MatchResult[]>([]);
   const [evolutionStatus, setEvolutionStatus] = useState<string>("");
   const [arenaConfig, setArenaConfig] = useState<ArenaConfig>(DEFAULT_ARENA_CONFIG);
@@ -96,7 +100,8 @@ const App: React.FC = () => {
 
   const handleStartCombat = () => {
     const opponent = aiPool[Math.floor(Math.random() * aiPool.length)];
-    setCurrentOpponent(opponent);
+    setActiveProfileP1(null); // P1 is human
+    setActiveProfileP2(opponent);
     setArenaConfig(DEFAULT_ARENA_CONFIG);
     setGameState(prev => ({ ...prev, player2: opponent.dna, activeScene: 'arena', isAutoMode: false }));
   };
@@ -104,14 +109,27 @@ const App: React.FC = () => {
   const handleStartAutoMode = () => {
      setMatchHistory([]);
      setIsLocalMatch(false);
-     if (!p1Ready) {
-         const starter = aiPool[0]; 
-         setGameState(prev => ({ ...prev, player1: { ...starter.dna, name: "Challenger 1" } }));
-     }
-     const opponent = aiPool[Math.floor(Math.random() * aiPool.length)];
-     setCurrentOpponent(opponent);
+     
+     // Pick two distinct random agents from pool
+     const idx1 = Math.floor(Math.random() * aiPool.length);
+     let idx2 = Math.floor(Math.random() * aiPool.length);
+     while (idx2 === idx1) idx2 = Math.floor(Math.random() * aiPool.length);
+
+     const agent1 = aiPool[idx1];
+     const agent2 = aiPool[idx2];
+
+     setActiveProfileP1(agent1);
+     setActiveProfileP2(agent2);
+
      setArenaConfig(DEFAULT_ARENA_CONFIG);
-     setGameState(prev => ({ ...prev, player2: opponent.dna, activeScene: 'arena', isAutoMode: true }));
+     
+     setGameState(prev => ({ 
+         ...prev, 
+         player1: agent1.dna,
+         player2: agent2.dna,
+         activeScene: 'arena', 
+         isAutoMode: true 
+     }));
   };
 
   const handleStartLocalMatch = () => {
@@ -127,6 +145,9 @@ const App: React.FC = () => {
   };
 
   const handleMatchComplete = (stats: { p1: number, p2: number, winner: 'p1' | 'p2' | 'draw', duration: number }) => {
+     const matchId = matchHistory.length + 1;
+     
+     // 1. Local Match Logic
      if (isLocalMatch) {
         const result: MatchResult = {
             id: Date.now(), timestamp: Date.now(), winner: stats.winner,
@@ -142,68 +163,154 @@ const App: React.FC = () => {
         return;
      }
 
-     const matchId = matchHistory.length + 1;
-     const outcome = stats.winner === 'p1' ? 'WIN' : stats.winner === 'p2' ? 'LOSS' : 'DRAW';
-     const { score } = calculateMatchScore(outcome, stats.p1, stats.p2, stats.duration, arenaConfig.particleCount * 2);
+     const outcomeP1 = stats.winner === 'p1' ? 'WIN' : stats.winner === 'p2' ? 'LOSS' : 'DRAW';
+     const outcomeP2 = stats.winner === 'p2' ? 'WIN' : stats.winner === 'p1' ? 'LOSS' : 'DRAW';
      
+     const { score: scoreP1 } = calculateMatchScore(outcomeP1, stats.p1, stats.p2, stats.duration, arenaConfig.particleCount * 2);
+     const { score: scoreP2 } = calculateMatchScore(outcomeP2, stats.p2, stats.p1, stats.duration, arenaConfig.particleCount * 2);
+
      const result: MatchResult = {
          id: matchId, timestamp: Date.now(), winner: stats.winner,
-         p1Name: gameState.player1.name, p2Name: currentOpponent?.dna.name || "Unknown",
+         p1Name: gameState.player1.name, p2Name: gameState.player2.name,
          p1Count: stats.p1, p2Count: stats.p2, duration: stats.duration, 
-         environmentName: arenaConfig.environmentName, scoreP1: score,
-         scoreP2: Math.floor(score * (Math.random() * 0.5 + 0.5))
+         environmentName: arenaConfig.environmentName, scoreP1, scoreP2
      };
+
      setMatchHistory(prev => [result, ...prev]);
-     setPlayerScore(prev => prev + score);
+
+     // Update Pool Stats
+     setAiPool(prevPool => prevPool.map(ai => {
+         if (activeProfileP1 && ai.id === activeProfileP1.id) {
+             return { ...ai, score: ai.score + scoreP1, matchesPlayed: ai.matchesPlayed + 1, wins: ai.wins + (outcomeP1 === 'WIN' ? 1 : 0) };
+         }
+         if (activeProfileP2 && ai.id === activeProfileP2.id) {
+             return { ...ai, score: ai.score + scoreP2, matchesPlayed: ai.matchesPlayed + 1, wins: ai.wins + (outcomeP2 === 'WIN' ? 1 : 0) };
+         }
+         // Passive pool movement
+         if (Math.random() < 0.1) return { ...ai, score: ai.score + Math.floor(Math.random() * 200) };
+         return ai;
+     }));
      
-     if (currentOpponent) {
-         setAiPool(prevPool => prevPool.map(ai => {
-             if (ai.id === currentOpponent.id) {
-                 return { ...ai, score: ai.score + result.scoreP2, matchesPlayed: ai.matchesPlayed + 1 };
-             }
-             if (Math.random() < 0.2) return { ...ai, score: ai.score + Math.floor(Math.random() * 500) };
-             return ai;
-         }));
+     if (!gameState.isAutoMode) {
+        setPlayerScore(prev => prev + scoreP1);
      }
+
+     // Prepare Profiles for Leaderboard
+     // If AutoMode, we use the active AI profiles. If Single Player, we construct P1 on the fly.
+     const lbP1 = activeProfileP1 || { id: 'player1', dna: gameState.player1, score: playerScore + scoreP1, matchesPlayed: matchHistory.length + 1, wins: 0 };
+     const lbP2 = activeProfileP2!; // Should always exist in combat modes
 
      setGameState(prev => ({
          ...prev,
          leaderboardData: {
              lastMatch: result,
-             player1Profile: { id: 'player1', dna: gameState.player1, score: playerScore + score, matchesPlayed: matchHistory.length + 1, wins: 0 },
-             player2Profile: currentOpponent!
+             player1Profile: lbP1,
+             player2Profile: lbP2
          },
          activeScene: 'leaderboard'
      }));
   };
 
   const handleLeaderboardNext = async () => {
-      if (isLocalMatch || !gameState.isAutoMode) {
+      // Logic split:
+      // Campaign Mode: Evolve P1, Keep P2 same (or new random), Next Arena
+      // Gauntlet Mode: Evolve P1 AND P2, Save to Pool, Pick NEW P1 & P2, Next Arena
+
+      if (isLocalMatch) {
           handleBackToMenu();
           return;
       }
+
       const lastMatch = gameState.leaderboardData!.lastMatch;
       const nextConfig = generateNextArenaConfig();
-      const nextOpponent = aiPool[Math.floor(Math.random() * aiPool.length)];
-      setCurrentOpponent(nextOpponent);
       setArenaConfig(nextConfig);
-      setEvolutionStatus(`Target: ${nextConfig.environmentName}`);
-      setGameState(prev => ({ ...prev, activeScene: 'evolution' }));
 
-      const outcome = lastMatch.winner === 'p1' ? 'WIN' : lastMatch.winner === 'p2' ? 'LOSS' : 'DRAW';
-      const initialPerPlayer = arenaConfig.particleCount * 2;
-      const mutation = calculateMutationRate(outcome, lastMatch.p1Count, lastMatch.p2Count, initialPerPlayer, lastMatch.duration);
-      
-      try {
-          const newP1DNA = await evolveColonyDNA(
-              gameState.player1, outcome, lastMatch.p1Count, lastMatch.p2Count, currentOpponent!.dna, nextConfig, mutation
-          );
-          setEvolutionStatus("Reconfiguring DNA...");
-          setTimeout(() => {
-               setGameState(prev => ({ ...prev, player1: newP1DNA, player2: nextOpponent.dna, activeScene: 'arena' }));
-          }, 1500);
-      } catch (e) {
-          setGameState(prev => ({ ...prev, activeScene: 'arena' }));
+      // --- CAMPAIGN MODE LOGIC ---
+      if (!gameState.isAutoMode) {
+          const nextOpponent = aiPool[Math.floor(Math.random() * aiPool.length)];
+          setActiveProfileP2(nextOpponent);
+          setEvolutionStatus(`Target: ${nextConfig.environmentName}`);
+          setGameState(prev => ({ ...prev, activeScene: 'evolution' }));
+
+          const outcome = lastMatch.winner === 'p1' ? 'WIN' : lastMatch.winner === 'p2' ? 'LOSS' : 'DRAW';
+          const mutation = calculateMutationRate(outcome, lastMatch.p1Count, lastMatch.p2Count, arenaConfig.particleCount * 2, lastMatch.duration);
+          
+          try {
+              const newP1DNA = await evolveColonyDNA(
+                  gameState.player1, outcome, lastMatch.p1Count, lastMatch.p2Count, activeProfileP2!.dna, nextConfig, mutation
+              );
+              setEvolutionStatus("Reconfiguring DNA...");
+              setTimeout(() => {
+                   setGameState(prev => ({ ...prev, player1: newP1DNA, player2: nextOpponent.dna, activeScene: 'arena' }));
+              }, 1500);
+          } catch (e) {
+              setGameState(prev => ({ ...prev, player2: nextOpponent.dna, activeScene: 'arena' }));
+          }
+          return;
+      }
+
+      // --- GAUNTLET MODE LOGIC ---
+      if (gameState.isAutoMode && activeProfileP1 && activeProfileP2) {
+          setEvolutionStatus(`Mutating: ${activeProfileP1.dna.name} & ${activeProfileP2.dna.name}`);
+          setGameState(prev => ({ ...prev, activeScene: 'evolution' }));
+
+          const initialPerPlayer = arenaConfig.particleCount * 2;
+          
+          const outcomeP1 = lastMatch.winner === 'p1' ? 'WIN' : lastMatch.winner === 'p2' ? 'LOSS' : 'DRAW';
+          const mutationP1 = calculateMutationRate(outcomeP1, lastMatch.p1Count, lastMatch.p2Count, initialPerPlayer, lastMatch.duration);
+          
+          const outcomeP2 = lastMatch.winner === 'p2' ? 'WIN' : lastMatch.winner === 'p1' ? 'LOSS' : 'DRAW';
+          const mutationP2 = calculateMutationRate(outcomeP2, lastMatch.p2Count, lastMatch.p1Count, initialPerPlayer, lastMatch.duration);
+
+          try {
+              // Evolve Both concurrently
+              const [newDna1, newDna2] = await Promise.all([
+                  evolveColonyDNA(activeProfileP1.dna, outcomeP1, lastMatch.p1Count, lastMatch.p2Count, activeProfileP2.dna, nextConfig, mutationP1),
+                  evolveColonyDNA(activeProfileP2.dna, outcomeP2, lastMatch.p2Count, lastMatch.p1Count, activeProfileP1.dna, nextConfig, mutationP2)
+              ]);
+
+              // Update them in the pool
+              setAiPool(prev => prev.map(p => {
+                  if (p.id === activeProfileP1.id) return { ...p, dna: newDna1 };
+                  if (p.id === activeProfileP2.id) return { ...p, dna: newDna2 };
+                  return p;
+              }));
+
+              setEvolutionStatus("Selecting New Combatants...");
+
+              setTimeout(() => {
+                  // Pick NEW combatants from the updated pool
+                  // We use a functional update on state inside the timeout to ensure we get fresh pool? 
+                  // Actually, state updates might batch. For simplicity, we grab randoms again, 
+                  // but we should ensure we don't grab the EXACT same ones if possible, or just random is fine.
+                  
+                  setAiPool(currentPool => {
+                      const idx1 = Math.floor(Math.random() * currentPool.length);
+                      let idx2 = Math.floor(Math.random() * currentPool.length);
+                      while (idx2 === idx1) idx2 = Math.floor(Math.random() * currentPool.length);
+
+                      const nextAgent1 = currentPool[idx1];
+                      const nextAgent2 = currentPool[idx2];
+                      
+                      setActiveProfileP1(nextAgent1);
+                      setActiveProfileP2(nextAgent2);
+                      
+                      setGameState(prev => ({ 
+                          ...prev, 
+                          player1: nextAgent1.dna, 
+                          player2: nextAgent2.dna, 
+                          activeScene: 'arena' 
+                      }));
+                      
+                      return currentPool;
+                  });
+              }, 2000);
+
+          } catch (e) {
+             console.error("Evolution failed", e);
+             // Fallback: just restart arena with old DNA
+             setGameState(prev => ({ ...prev, activeScene: 'arena' }));
+          }
       }
   };
 
@@ -222,7 +329,13 @@ const App: React.FC = () => {
           />
         ) : null;
       case 'evolution':
-        return <EvolutionView arenaConfig={arenaConfig} statusMessage={evolutionStatus} />;
+        return <EvolutionView 
+            arenaConfig={arenaConfig} 
+            statusMessage={evolutionStatus} 
+            isDual={gameState.isAutoMode}
+            p1Name={activeProfileP1?.dna.name}
+            p2Name={activeProfileP2?.dna.name}
+        />;
       case 'arena':
         return (
           <Arena 
@@ -323,9 +436,9 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        <div className="w-[450px] relative perspective-[1000px] group">
-            <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-1000 rounded-3xl"></div>
-            <div className="relative bg-black/60 backdrop-blur-xl border border-white/10 p-8 clip-tech-border shadow-2xl flex flex-col gap-6 transform transition-transform duration-500 group-hover:rotate-y-2">
+        <div className="w-[450px] relative perspective-[1000px] group/menu">
+            <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 to-blue-600/20 blur-xl opacity-0 group-hover/menu:opacity-100 transition-opacity duration-1000 rounded-3xl"></div>
+            <div className="relative bg-black/60 backdrop-blur-xl border border-white/10 p-8 clip-tech-border shadow-2xl flex flex-col gap-6 transform transition-transform duration-500 group-hover/menu:rotate-y-2">
                 <div className="flex items-center justify-between border-b border-white/10 pb-4">
                     <div>
                         <div className="text-xs text-neutral-500 font-mono uppercase">Active Profile</div>
@@ -344,7 +457,7 @@ const App: React.FC = () => {
                     <Button variant="secondary" size="lg" className="w-full" onClick={handleStartCombat} icon={<Sword size={20} />}>
                         QUICK MATCH (AI)
                     </Button>
-                    <Button variant="danger" size="lg" className="w-full border-purple-500/50 text-purple-400 hover:text-white hover:border-purple-400" onClick={handleStartAutoMode} icon={<BrainCircuit size={20} />}>
+                    <Button variant="danger" size="lg" className="w-full border-purple-500/50 text-purple-400 hover:text-white hover:border-purple-400" onClick={handleStartAutoMode} icon={<Infinity size={20} />}>
                         GAUNTLET MODE
                     </Button>
                     <Button variant="ghost" size="sm" className="w-full mt-4" onClick={() => setShowLocalLobby(true)} icon={<Gamepad2 size={16} />}>

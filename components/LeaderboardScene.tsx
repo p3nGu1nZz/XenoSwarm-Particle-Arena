@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MatchResult, PlayerProfile } from '../types';
 import Button from './Button';
-import { Trophy, ArrowRight, User, Loader2, Award } from 'lucide-react';
+import { Trophy, ArrowRight, Loader2, Award, Zap, Shield } from 'lucide-react';
 
 interface Props {
   matchResult: MatchResult;
@@ -20,32 +20,43 @@ const LeaderboardScene: React.FC<Props> = ({
     onNext,
     isAutoMode
 }) => {
-  const [displayedScore, setDisplayedScore] = useState(0);
+  const [displayedScoreP1, setDisplayedScoreP1] = useState(0);
+  const [displayedScoreP2, setDisplayedScoreP2] = useState(0);
   const [showRankings, setShowRankings] = useState(false);
-  const [tallyIndex, setTallyIndex] = useState(0);
   const [autoTimer, setAutoTimer] = useState(5);
 
-  const allPlayers = [p1Profile, ...aiPool].sort((a,b) => b.score - a.score);
-  const myRank = allPlayers.findIndex(p => p.id === p1Profile.id) + 1;
-
-  const breakdown = [
-      { label: "Base Reward", val: matchResult.winner === 'p1' ? 1000 : matchResult.winner === 'draw' ? 250 : 50 },
-      { label: "Unit Survival", val: matchResult.p1Count * 10 },
-      { label: "Domination", val: Math.max(0, matchResult.p1Count - matchResult.p2Count) * 5 },
-      { label: "Speed Bonus", val: matchResult.winner === 'p1' ? Math.floor(Math.max(0, 90 - matchResult.duration) * 10) : 0 }
-  ];
+  const allPlayers = [...aiPool].sort((a,b) => b.score - a.score);
+  const myRank = !isAutoMode ? allPlayers.findIndex(p => p.id === p1Profile.id) + 1 : -1;
 
   useEffect(() => {
-    if (tallyIndex < breakdown.length) {
-        const timer = setTimeout(() => {
-            setDisplayedScore(prev => prev + breakdown[tallyIndex].val);
-            setTallyIndex(prev => prev + 1);
-        }, 300);
-        return () => clearTimeout(timer);
-    } else {
-        setTimeout(() => setShowRankings(true), 600);
-    }
-  }, [tallyIndex]);
+    // Quick score tally animation
+    const targetP1 = matchResult.scoreP1;
+    const targetP2 = matchResult.scoreP2;
+    
+    let currentP1 = 0;
+    let currentP2 = 0;
+    const step = Math.max(10, Math.floor(Math.max(targetP1, targetP2) / 20));
+
+    const interval = setInterval(() => {
+        let changed = false;
+        if (currentP1 < targetP1) {
+            currentP1 = Math.min(targetP1, currentP1 + step);
+            setDisplayedScoreP1(currentP1);
+            changed = true;
+        }
+        if (currentP2 < targetP2) {
+            currentP2 = Math.min(targetP2, currentP2 + step);
+            setDisplayedScoreP2(currentP2);
+            changed = true;
+        }
+        if (!changed) {
+            clearInterval(interval);
+            setTimeout(() => setShowRankings(true), 500);
+        }
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [matchResult]);
 
   useEffect(() => {
       if (!isAutoMode || !showRankings) return;
@@ -62,6 +73,74 @@ const LeaderboardScene: React.FC<Props> = ({
       return () => clearInterval(interval);
   }, [isAutoMode, showRankings]);
 
+  // SPECTATOR MODE RENDER
+  if (isAutoMode) {
+      return (
+        <div className="w-full h-screen bg-[#020203] relative overflow-hidden flex flex-col items-center justify-center font-sans">
+             {/* Background */}
+            <div className="absolute inset-0 z-0">
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.5)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.5)_1px,transparent_1px)] bg-[size:40px_40px] opacity-20"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/80"></div>
+            </div>
+
+            <div className="z-10 w-full max-w-7xl p-8 flex flex-col items-center gap-8">
+                 <div className="text-center">
+                    <h2 className="text-6xl font-black italic brand-font text-white mb-2 tracking-tighter drop-shadow-lg">
+                        SIMULATION REPORT
+                    </h2>
+                    <div className="text-neutral-500 font-mono uppercase tracking-[0.5em] text-xs">AI vs AI Neural Assessment</div>
+                 </div>
+
+                 <div className="flex gap-8 w-full items-stretch justify-center">
+                     {/* PLAYER 1 CARD */}
+                     <div className={`flex-1 glass-panel clip-tech-border p-8 border-t-4 ${matchResult.winner === 'p1' ? 'border-cyan-400 bg-cyan-900/10' : 'border-neutral-700'} flex flex-col items-center relative overflow-hidden`}>
+                         {matchResult.winner === 'p1' && <div className="absolute top-4 right-4 text-cyan-400 font-bold font-mono text-xs border border-cyan-400 px-2 py-0.5 rounded">WINNER</div>}
+                         <div className="text-4xl font-black brand-font text-cyan-400 mb-1">{p1Profile.dna.name}</div>
+                         <div className="text-xs text-neutral-500 font-mono mb-6">BLUE SWARM</div>
+                         
+                         <div className="grid grid-cols-2 gap-4 w-full mb-6">
+                             <div className="bg-black/30 p-2 rounded text-center">
+                                 <div className="text-[10px] text-neutral-500 uppercase">Survival</div>
+                                 <div className="text-white font-bold font-mono">{matchResult.p1Count}</div>
+                             </div>
+                             <div className="bg-black/30 p-2 rounded text-center">
+                                 <div className="text-[10px] text-neutral-500 uppercase">Points</div>
+                                 <div className="text-cyan-300 font-black font-mono text-xl">{displayedScoreP1}</div>
+                             </div>
+                         </div>
+                     </div>
+
+                     <div className="flex flex-col items-center justify-center text-white/20 italic font-black text-6xl px-4">VS</div>
+
+                     {/* PLAYER 2 CARD */}
+                     <div className={`flex-1 glass-panel clip-tech-border p-8 border-t-4 ${matchResult.winner === 'p2' ? 'border-orange-400 bg-orange-900/10' : 'border-neutral-700'} flex flex-col items-center relative overflow-hidden`}>
+                         {matchResult.winner === 'p2' && <div className="absolute top-4 right-4 text-orange-400 font-bold font-mono text-xs border border-orange-400 px-2 py-0.5 rounded">WINNER</div>}
+                         <div className="text-4xl font-black brand-font text-orange-400 mb-1">{p2Profile.dna.name}</div>
+                         <div className="text-xs text-neutral-500 font-mono mb-6">ORANGE LEGION</div>
+                         
+                         <div className="grid grid-cols-2 gap-4 w-full mb-6">
+                             <div className="bg-black/30 p-2 rounded text-center">
+                                 <div className="text-[10px] text-neutral-500 uppercase">Survival</div>
+                                 <div className="text-white font-bold font-mono">{matchResult.p2Count}</div>
+                             </div>
+                             <div className="bg-black/30 p-2 rounded text-center">
+                                 <div className="text-[10px] text-neutral-500 uppercase">Points</div>
+                                 <div className="text-orange-300 font-black font-mono text-xl">{displayedScoreP2}</div>
+                             </div>
+                         </div>
+                     </div>
+                 </div>
+
+                 <div className="w-full py-6 border border-purple-500/20 bg-purple-900/5 text-purple-300 font-bold text-center flex items-center justify-center gap-3 mono-font mt-8">
+                    <Loader2 className="animate-spin" size={16} />
+                    INITIALIZING EVOLUTION SEQUENCE IN {autoTimer}s
+                 </div>
+            </div>
+        </div>
+      );
+  }
+
+  // --- CAMPAIGN MODE RENDER ---
   return (
     <div className="w-full h-screen bg-[#020203] relative overflow-hidden flex flex-col items-center justify-center font-sans">
       
@@ -84,32 +163,29 @@ const LeaderboardScene: React.FC<Props> = ({
               </div>
 
               <div className="space-y-3 mb-12 bg-black/20 p-6 border-l-2 border-white/10 backdrop-blur-sm">
-                  {breakdown.map((item, idx) => (
-                      <div 
-                        key={idx} 
-                        className={`flex justify-between items-center font-mono p-2 transition-all duration-500 ${idx < tallyIndex ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'}`}
-                      >
-                          <span className="text-neutral-500 uppercase text-xs tracking-widest">{item.label}</span>
-                          <span className="text-cyan-400 font-bold text-lg">+{item.val}</span>
-                      </div>
-                  ))}
+                  <div className="flex justify-between items-center font-mono p-2 border-b border-white/5 pb-2 mb-2">
+                       <span className="text-neutral-500 uppercase text-xs tracking-widest">Base Reward</span>
+                       <span className="text-cyan-400 font-bold text-lg">+{matchResult.winner === 'p1' ? 1000 : matchResult.winner === 'draw' ? 250 : 50}</span>
+                  </div>
+                   <div className="flex justify-between items-center font-mono p-2 border-b border-white/5 pb-2 mb-2">
+                       <span className="text-neutral-500 uppercase text-xs tracking-widest">Survival Bonus</span>
+                       <span className="text-cyan-400 font-bold text-lg">+{matchResult.p1Count * 10}</span>
+                  </div>
+                  <div className="flex justify-between items-center font-mono p-2 border-b border-white/5 pb-2 mb-2">
+                       <span className="text-neutral-500 uppercase text-xs tracking-widest">Domination Bonus</span>
+                       <span className="text-cyan-400 font-bold text-lg">+{Math.max(0, matchResult.p1Count - matchResult.p2Count) * 5}</span>
+                  </div>
+
                   <div className="border-t border-white/10 my-4 pt-4 flex justify-between items-end">
-                      <span className="text-white font-bold brand-font text-xl">TOTAL EARNED</span>
-                      <span className="text-4xl font-black text-white text-glow-cyan brand-font">{displayedScore.toLocaleString()}</span>
+                      <span className="text-white font-bold brand-font text-xl">TOTAL SCORE</span>
+                      <span className="text-4xl font-black text-white text-glow-cyan brand-font">{displayedScoreP1.toLocaleString()}</span>
                   </div>
               </div>
 
               <div className="mt-auto">
-                 {isAutoMode ? (
-                     <div className="w-full py-6 border border-cyan-500/20 bg-cyan-900/5 text-cyan-400 font-bold text-center flex items-center justify-center gap-3 mono-font">
-                        <Loader2 className="animate-spin" size={16} />
-                        NEXT ROUND INITIATING IN {autoTimer}s
-                     </div>
-                 ) : (
-                    <Button size="lg" onClick={onNext} className="w-full" icon={<ArrowRight />}>
-                        CONTINUE CAMPAIGN
-                    </Button>
-                 )}
+                <Button size="lg" onClick={onNext} className="w-full" icon={<ArrowRight />}>
+                    CONTINUE CAMPAIGN
+                </Button>
               </div>
           </div>
 
@@ -147,10 +223,12 @@ const LeaderboardScene: React.FC<Props> = ({
                     })}
                 </div>
                 
-                <div className="mt-4 pt-4 border-t border-white/10 text-center">
-                    <span className="text-neutral-500 text-[10px] uppercase tracking-widest mr-2">Your Current Standing</span>
-                    <span className="text-2xl font-black text-white brand-font">RANK #{myRank}</span>
-                </div>
+                {myRank !== -1 && (
+                    <div className="mt-4 pt-4 border-t border-white/10 text-center">
+                        <span className="text-neutral-500 text-[10px] uppercase tracking-widest mr-2">Your Current Standing</span>
+                        <span className="text-2xl font-black text-white brand-font">RANK #{myRank}</span>
+                    </div>
+                )}
               </div>
           </div>
       </div>

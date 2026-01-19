@@ -4,6 +4,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_ARENA_CONFIG } from '../constants'
 import { ColonyDNA, ArenaConfig } from '../types';
 import { soundManager } from '../services/SoundService';
 import { Howler } from 'howler';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface Props {
   mode: 'training' | 'arena';
@@ -85,8 +86,11 @@ const SimulationView: React.FC<Props> = ({
   const lastTimeRef = useRef(0);
   
   const [localSelectedIdx, setLocalSelectedIdx] = useState<number | null>(null);
+  const [localShowVectors, setLocalShowVectors] = useState(false);
+  
   const isControlled = onSelectParticle !== undefined;
   const activeSelectedIdx = isControlled ? (propSelectedIdx ?? null) : localSelectedIdx;
+  const shouldShowVectors = showVectors || localShowVectors;
 
   useEffect(() => {
     for (const key in particleSprites) delete particleSprites[key];
@@ -137,7 +141,7 @@ const SimulationView: React.FC<Props> = ({
   }, [p1Retreat, p2Retreat, p1Aggressive, p2Aggressive, mode]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!engineRef.current || mode !== 'training') return;
+    if (!engineRef.current) return;
     
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -302,21 +306,36 @@ const SimulationView: React.FC<Props> = ({
         ctx.drawImage(sprite, px - offset, py - offset);
       }
       
-      if (showVectors) {
+      if (shouldShowVectors) {
          ctx.globalCompositeOperation = 'source-over';
          const forces = engine.forces;
-         for (let i = 0; i < count; i++) {
+         // Sample particles to avoid visual clutter (aim for max ~150 vectors)
+         const vectorStride = Math.max(1, Math.floor(count / 150));
+         
+         for (let i = 0; i < count; i += vectorStride) {
             const px = pos[i * 2];
             const py = pos[i * 2 + 1];
             const fx = forces[i*2];
             const fy = forces[i*2+1];
             const mag = Math.sqrt(fx*fx + fy*fy);
+            
             if (mag > 0.05) {
-                ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(mag * 0.5, 0.3)})`;
+                const alpha = Math.min(mag * 0.5, 0.4);
+                ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
                 ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(px, py);
-                ctx.lineTo(px + fx * 20, py + fy * 20); 
+                const vx = fx * 20;
+                const vy = fy * 20;
+                ctx.lineTo(px + vx, py + vy); 
+                
+                // Small Arrow Head
+                const angle = Math.atan2(vy, vx);
+                const headLen = 3;
+                ctx.lineTo(px + vx - headLen * Math.cos(angle - Math.PI / 6), py + vy - headLen * Math.sin(angle - Math.PI / 6));
+                ctx.moveTo(px + vx, py + vy);
+                ctx.lineTo(px + vx - headLen * Math.cos(angle + Math.PI / 6), py + vy - headLen * Math.sin(angle + Math.PI / 6));
+                
                 ctx.stroke();
             }
          }
@@ -329,12 +348,14 @@ const SimulationView: React.FC<Props> = ({
           if (debugInfo) {
              const { x, y, netFx, netFy, interactions } = debugInfo;
              
+             // Selection Circle
              ctx.strokeStyle = '#00f3ff';
              ctx.lineWidth = 2;
              ctx.beginPath();
              ctx.arc(x, y, 16, 0, Math.PI * 2); 
              ctx.stroke();
              
+             // Crosshair
              ctx.setLineDash([4, 4]);
              ctx.beginPath();
              ctx.moveTo(x-20, y); ctx.lineTo(x+20, y);
@@ -342,6 +363,7 @@ const SimulationView: React.FC<Props> = ({
              ctx.stroke();
              ctx.setLineDash([]);
 
+             // Net Force Vector
              ctx.strokeStyle = '#00f3ff';
              ctx.lineWidth = 2;
              ctx.beginPath();
@@ -349,7 +371,8 @@ const SimulationView: React.FC<Props> = ({
              ctx.lineTo(x + netFx * 40, y + netFy * 40);
              ctx.stroke();
 
-             ctx.globalAlpha = 0.4;
+             // Interaction Lines
+             ctx.globalAlpha = 0.5;
              interactions.forEach(inter => {
                 ctx.strokeStyle = inter.isRepulsion ? '#ff0055' : '#00f3ff';
                 ctx.lineWidth = Math.min(Math.abs(inter.force) * 4, 3); 
@@ -386,10 +409,10 @@ const SimulationView: React.FC<Props> = ({
     return () => {
       if (reqRef.current) cancelAnimationFrame(reqRef.current);
     };
-  }, [mode, onStatsUpdate, showVectors, showTrails, activeSelectedIdx, arenaConfig, paused, p1Retreat, p2Retreat, p1Aggressive, p2Aggressive]);
+  }, [mode, onStatsUpdate, shouldShowVectors, showTrails, activeSelectedIdx, arenaConfig, paused, p1Retreat, p2Retreat, p1Aggressive, p2Aggressive]);
 
   return (
-    <div className="w-full h-full flex items-center justify-center p-2">
+    <div className="w-full h-full flex items-center justify-center p-2 relative">
        {/* Monitor Frame */}
        <div 
          className="relative w-full h-full overflow-hidden shadow-[0_0_100px_rgba(0,0,0,0.8)] border border-neutral-800 bg-black"
@@ -414,10 +437,19 @@ const SimulationView: React.FC<Props> = ({
            onClick={handleCanvasClick}
          />
          
-         {mode === 'training' && (
+         {/* Local Vector Toggle (Available in all modes) */}
+         <button 
+            onClick={() => setLocalShowVectors(!localShowVectors)}
+            className="absolute bottom-8 left-8 z-30 p-2 bg-black/50 border border-white/10 rounded text-neutral-400 hover:text-cyan-400 transition-colors backdrop-blur-sm"
+            title="Toggle Force Vectors"
+         >
+            {shouldShowVectors ? <Eye size={16} /> : <EyeOff size={16} />}
+         </button>
+         
+         {(activeSelectedIdx !== null) && (
            <div className="absolute top-8 right-8 pointer-events-none text-right z-30">
                <div className="text-[10px] text-cyan-400 uppercase tracking-widest bg-black/90 px-4 py-2 border border-cyan-500/50 backdrop-blur-md shadow-lg mono-font clip-tech-border">
-                  {activeSelectedIdx !== null ? `TARGET_LOCKED :: ID [${activeSelectedIdx}]` : "AWAITING_INPUT"}
+                  TARGET_LOCKED :: ID [{activeSelectedIdx}]
                </div>
            </div>
          )}
