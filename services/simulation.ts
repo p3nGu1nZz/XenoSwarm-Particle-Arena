@@ -38,6 +38,9 @@ export class SimulationEngine {
   isArena: boolean = false;
   p1Escaped: number = 0;
   p2Escaped: number = 0;
+  
+  // Simulation Time for procedural effects
+  time: number = 0;
 
   // Sound Events
   frameEvents = {
@@ -57,6 +60,7 @@ export class SimulationEngine {
     this.forceMatrix = new Float32Array(16);
     this.colors = [];
     this.config = { ...DEFAULT_ARENA_CONFIG };
+    this.time = 0;
   }
 
   reset() {
@@ -64,6 +68,7 @@ export class SimulationEngine {
     this.p1Escaped = 0;
     this.p2Escaped = 0;
     this.trailHistory.fill(0);
+    this.time = 0;
     this.resetEvents();
   }
 
@@ -206,6 +211,8 @@ export class SimulationEngine {
 
   update() {
     this.resetEvents(); // Clear audio events for this frame
+    this.time += 0.005; // Advance simulation time for flow fields
+
     const count = this.count;
     const pos = this.positions;
     const vel = this.velocities;
@@ -278,11 +285,28 @@ export class SimulationEngine {
       
       // Arena-specific dynamic adjustments to prevent stalemates
       if (isArena) {
-          // REMOVED: Gravitational pull to center - Walls handle containment now
+          // 1. Thermal Jitter: Random vibration to prevent perfect crystalline freezing
+          // Reduced magnitude slightly to rely more on the new flow field
+          // Scale jitter by (1-friction) to ensure it works in high friction environments
+          const jitter = 0.4 * (1.0 - friction + 0.1);
+          vel[i * 2] += (Math.random() - 0.5) * jitter;
+          vel[i * 2 + 1] += (Math.random() - 0.5) * jitter;
+
+          // 2. Procedural Flow Field (Subtle Currents)
+          // Uses position and time to create slowly changing drift vectors.
+          // This prevents large colonies from sitting perfectly still in one spot.
+          const px = pos[i*2];
+          const py = pos[i*2+1];
+          const scale = 0.005; // Spatial scale of the noise
           
-          // Random thermal jitter to prevent crystal-like freezing (Stalemate)
-          vel[i * 2] += (Math.random() - 0.5) * 0.3;
-          vel[i * 2 + 1] += (Math.random() - 0.5) * 0.3;
+          // Simple trig-based pseudo-noise to create "swirling" currents
+          // Varying the multipliers makes it look organic
+          const flowX = Math.sin(py * scale + this.time) + Math.cos(px * scale * 0.5 + this.time * 1.3);
+          const flowY = Math.cos(px * scale + this.time) + Math.sin(py * scale * 0.5 + this.time * 1.7);
+          
+          const flowStrength = 0.035; // Very subtle, just enough to nudge
+          vel[i * 2] += flowX * flowStrength;
+          vel[i * 2 + 1] += flowY * flowStrength;
       }
 
       // Friction
