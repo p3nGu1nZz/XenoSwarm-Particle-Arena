@@ -71,6 +71,9 @@ const App: React.FC = () => {
   const [arenaConfig, setArenaConfig] = useState<ArenaConfig>(DEFAULT_ARENA_CONFIG);
   const [isLocalMatch, setIsLocalMatch] = useState(false);
   const [showLocalLobby, setShowLocalLobby] = useState(false);
+  
+  // Transition state for Evolution View effect
+  const [evolutionPhase, setEvolutionPhase] = useState<'analyzing' | 'applying'>('analyzing');
 
   useEffect(() => {
       setAiPool(generateAIPool(20));
@@ -178,7 +181,7 @@ const App: React.FC = () => {
 
      setMatchHistory(prev => [result, ...prev]);
 
-     // Update Pool Stats
+     // Update Pool Stats Immediately so Leaderboard has correct "final" data
      setAiPool(prevPool => prevPool.map(ai => {
          if (activeProfileP1 && ai.id === activeProfileP1.id) {
              return { ...ai, score: ai.score + scoreP1, matchesPlayed: ai.matchesPlayed + 1, wins: ai.wins + (outcomeP1 === 'WIN' ? 1 : 0) };
@@ -186,8 +189,8 @@ const App: React.FC = () => {
          if (activeProfileP2 && ai.id === activeProfileP2.id) {
              return { ...ai, score: ai.score + scoreP2, matchesPlayed: ai.matchesPlayed + 1, wins: ai.wins + (outcomeP2 === 'WIN' ? 1 : 0) };
          }
-         // Passive pool movement
-         if (Math.random() < 0.1) return { ...ai, score: ai.score + Math.floor(Math.random() * 200) };
+         // Passive pool movement for background activity simulation
+         if (Math.random() < 0.15) return { ...ai, score: ai.score + Math.floor(Math.random() * 150) };
          return ai;
      }));
      
@@ -196,9 +199,9 @@ const App: React.FC = () => {
      }
 
      // Prepare Profiles for Leaderboard
-     // If AutoMode, we use the active AI profiles. If Single Player, we construct P1 on the fly.
+     // We pass the *updated* stats to the leaderboard, it will handle calculating the delta for animation
      const lbP1 = activeProfileP1 || { id: 'player1', dna: gameState.player1, score: playerScore + scoreP1, matchesPlayed: matchHistory.length + 1, wins: 0 };
-     const lbP2 = activeProfileP2!; // Should always exist in combat modes
+     const lbP2 = activeProfileP2!; 
 
      setGameState(prev => ({
          ...prev,
@@ -212,10 +215,6 @@ const App: React.FC = () => {
   };
 
   const handleLeaderboardNext = async () => {
-      // Logic split:
-      // Campaign Mode: Evolve P1, Keep P2 same (or new random), Next Arena
-      // Gauntlet Mode: Evolve P1 AND P2, Save to Pool, Pick NEW P1 & P2, Next Arena
-
       if (isLocalMatch) {
           handleBackToMenu();
           return;
@@ -225,35 +224,12 @@ const App: React.FC = () => {
       const nextConfig = generateNextArenaConfig();
       setArenaConfig(nextConfig);
 
-      // --- CAMPAIGN MODE LOGIC ---
-      if (!gameState.isAutoMode) {
-          const nextOpponent = aiPool[Math.floor(Math.random() * aiPool.length)];
-          setActiveProfileP2(nextOpponent);
-          setEvolutionStatus(`Target: ${nextConfig.environmentName}`);
-          setGameState(prev => ({ ...prev, activeScene: 'evolution' }));
-
-          const outcome = lastMatch.winner === 'p1' ? 'WIN' : lastMatch.winner === 'p2' ? 'LOSS' : 'DRAW';
-          const mutation = calculateMutationRate(outcome, lastMatch.p1Count, lastMatch.p2Count, arenaConfig.particleCount * 2, lastMatch.duration);
-          
-          try {
-              const newP1DNA = await evolveColonyDNA(
-                  gameState.player1, outcome, lastMatch.p1Count, lastMatch.p2Count, activeProfileP2!.dna, nextConfig, mutation
-              );
-              setEvolutionStatus("Reconfiguring DNA...");
-              setTimeout(() => {
-                   setGameState(prev => ({ ...prev, player1: newP1DNA, player2: nextOpponent.dna, activeScene: 'arena' }));
-              }, 1500);
-          } catch (e) {
-              setGameState(prev => ({ ...prev, player2: nextOpponent.dna, activeScene: 'arena' }));
-          }
-          return;
-      }
+      setEvolutionPhase('analyzing'); // Start Phase 1
+      setEvolutionStatus("ANALYZING COMBAT DATA...");
+      setGameState(prev => ({ ...prev, activeScene: 'evolution' }));
 
       // --- GAUNTLET MODE LOGIC ---
       if (gameState.isAutoMode && activeProfileP1 && activeProfileP2) {
-          setEvolutionStatus(`Mutating: ${activeProfileP1.dna.name} & ${activeProfileP2.dna.name}`);
-          setGameState(prev => ({ ...prev, activeScene: 'evolution' }));
-
           const initialPerPlayer = arenaConfig.particleCount * 2;
           
           const outcomeP1 = lastMatch.winner === 'p1' ? 'WIN' : lastMatch.winner === 'p2' ? 'LOSS' : 'DRAW';
@@ -269,47 +245,76 @@ const App: React.FC = () => {
                   evolveColonyDNA(activeProfileP2.dna, outcomeP2, lastMatch.p2Count, lastMatch.p1Count, activeProfileP1.dna, nextConfig, mutationP2)
               ]);
 
-              // Update them in the pool
+              // Trigger Phase 2 Visuals
+              setEvolutionPhase('applying');
+              setEvolutionStatus("APPLYING GENETIC MUTATIONS...");
+
+              // Brief pause to let user see "Applying"
+              await new Promise(r => setTimeout(r, 1500));
+
+              // Update Pool
               setAiPool(prev => prev.map(p => {
                   if (p.id === activeProfileP1.id) return { ...p, dna: newDna1 };
                   if (p.id === activeProfileP2.id) return { ...p, dna: newDna2 };
                   return p;
               }));
 
-              setEvolutionStatus("Selecting New Combatants...");
+              // Pick NEW combatants
+              let nextAgent1 = activeProfileP1; // Fallback
+              let nextAgent2 = activeProfileP2;
 
-              setTimeout(() => {
-                  // Pick NEW combatants from the updated pool
-                  // We use a functional update on state inside the timeout to ensure we get fresh pool? 
-                  // Actually, state updates might batch. For simplicity, we grab randoms again, 
-                  // but we should ensure we don't grab the EXACT same ones if possible, or just random is fine.
-                  
-                  setAiPool(currentPool => {
-                      const idx1 = Math.floor(Math.random() * currentPool.length);
-                      let idx2 = Math.floor(Math.random() * currentPool.length);
-                      while (idx2 === idx1) idx2 = Math.floor(Math.random() * currentPool.length);
+              setAiPool(currentPool => {
+                  const idx1 = Math.floor(Math.random() * currentPool.length);
+                  let idx2 = Math.floor(Math.random() * currentPool.length);
+                  while (idx2 === idx1) idx2 = Math.floor(Math.random() * currentPool.length);
 
-                      const nextAgent1 = currentPool[idx1];
-                      const nextAgent2 = currentPool[idx2];
-                      
-                      setActiveProfileP1(nextAgent1);
-                      setActiveProfileP2(nextAgent2);
-                      
-                      setGameState(prev => ({ 
-                          ...prev, 
-                          player1: nextAgent1.dna, 
-                          player2: nextAgent2.dna, 
-                          activeScene: 'arena' 
-                      }));
-                      
-                      return currentPool;
-                  });
-              }, 2000);
+                  nextAgent1 = currentPool[idx1];
+                  nextAgent2 = currentPool[idx2];
+                  return currentPool;
+              });
+
+              // Transition to Arena
+              setEvolutionStatus("MATCHMAKING COMPLETE");
+              await new Promise(r => setTimeout(r, 500));
+              
+              setActiveProfileP1(nextAgent1);
+              setActiveProfileP2(nextAgent2);
+              
+              setGameState(prev => ({ 
+                  ...prev, 
+                  player1: nextAgent1.dna, // Usually redundant if we updated pool, but safe
+                  player2: nextAgent2.dna, 
+                  activeScene: 'arena' 
+              }));
 
           } catch (e) {
              console.error("Evolution failed", e);
-             // Fallback: just restart arena with old DNA
              setGameState(prev => ({ ...prev, activeScene: 'arena' }));
+          }
+          return;
+      }
+
+      // --- CAMPAIGN MODE LOGIC ---
+      if (!gameState.isAutoMode) {
+          const nextOpponent = aiPool[Math.floor(Math.random() * aiPool.length)];
+          setActiveProfileP2(nextOpponent);
+          
+          const outcome = lastMatch.winner === 'p1' ? 'WIN' : lastMatch.winner === 'p2' ? 'LOSS' : 'DRAW';
+          const mutation = calculateMutationRate(outcome, lastMatch.p1Count, lastMatch.p2Count, arenaConfig.particleCount * 2, lastMatch.duration);
+          
+          try {
+              const newP1DNA = await evolveColonyDNA(
+                  gameState.player1, outcome, lastMatch.p1Count, lastMatch.p2Count, activeProfileP2!.dna, nextConfig, mutation
+              );
+              
+              setEvolutionPhase('applying');
+              setEvolutionStatus("RECONFIGURING DNA STRANDS...");
+              
+              await new Promise(r => setTimeout(r, 1500));
+              
+              setGameState(prev => ({ ...prev, player1: newP1DNA, player2: nextOpponent.dna, activeScene: 'arena' }));
+          } catch (e) {
+              setGameState(prev => ({ ...prev, player2: nextOpponent.dna, activeScene: 'arena' }));
           }
       }
   };
@@ -335,6 +340,7 @@ const App: React.FC = () => {
             isDual={gameState.isAutoMode}
             p1Name={activeProfileP1?.dna.name}
             p2Name={activeProfileP2?.dna.name}
+            phase={evolutionPhase}
         />;
       case 'arena':
         return (

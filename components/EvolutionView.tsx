@@ -8,6 +8,7 @@ interface Props {
   isDual?: boolean;
   p1Name?: string;
   p2Name?: string;
+  phase?: 'analyzing' | 'applying'; // New prop to control visual transition
 }
 
 const NeuroNetworkVisual: React.FC = () => {
@@ -100,7 +101,7 @@ const NeuroNetworkVisual: React.FC = () => {
     return <canvas ref={canvasRef} className="absolute inset-0 z-0 opacity-40" />;
 };
 
-const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage, isDual, p1Name, p2Name }) => {
+const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage, isDual, p1Name, p2Name, phase = 'analyzing' }) => {
   return (
     <div className="w-full h-screen bg-[#050505] flex flex-col items-center justify-center relative overflow-hidden">
       {/* Neuro Visualizer Background */}
@@ -108,81 +109,84 @@ const EvolutionView: React.FC<Props> = ({ arenaConfig, statusMessage, isDual, p1
 
       {/* Background Effects */}
       <div className="absolute inset-0 z-0 pointer-events-none">
-         <div className="absolute top-[20%] left-[20%] w-[40%] h-[40%] bg-purple-900/10 blur-[100px] rounded-full animate-pulse"></div>
+         <div className={`absolute top-[20%] left-[20%] w-[40%] h-[40%] blur-[100px] rounded-full animate-pulse transition-colors duration-1000 ${phase === 'applying' ? 'bg-cyan-900/10' : 'bg-purple-900/10'}`}></div>
          <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.5)_2px,transparent_2px),linear-gradient(90deg,rgba(0,0,0,0.5)_2px,transparent_2px)] bg-[size:50px_50px] opacity-20"></div>
       </div>
 
-      <div className="z-10 flex flex-col items-center max-w-4xl text-center space-y-8 p-12 bg-neutral-900/80 border border-cyan-500/30 backdrop-blur-md rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.15)] clip-tech-border animate-in zoom-in-95 duration-500">
+      <div className={`z-10 flex flex-col items-center max-w-4xl text-center space-y-8 p-12 bg-neutral-900/80 border border-cyan-500/30 backdrop-blur-md rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.15)] clip-tech-border transition-all duration-700 transform ${phase === 'applying' ? 'scale-105 border-cyan-400/50' : 'scale-100'}`}>
         
-        {/* Animated Icon */}
-        <div className="relative">
-            <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full animate-ping"></div>
-            <BrainCircuit size={80} className="text-cyan-400 relative z-10 animate-pulse" />
-        </div>
-
-        <div>
-            <h2 className="text-4xl font-bold brand-font text-white mb-2 tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
-                {isDual ? "MULTI-AGENT EVOLUTION" : "NEURAL EVOLUTION"}
-            </h2>
-            <div className="h-1 w-24 bg-gradient-to-r from-cyan-500 to-transparent mx-auto mb-4"></div>
-            <p className="text-cyan-400 font-mono text-sm animate-pulse">
-                {statusMessage || "Optimizing Colony DNA..."}
-            </p>
-        </div>
-        
-        {isDual && (
-            <div className="flex justify-center gap-12 w-full">
-                <div className="flex flex-col items-center gap-2 opacity-80">
-                    <Dna className="text-cyan-400 animate-spin-slow" size={32} />
-                    <span className="text-xs font-mono text-cyan-200">{p1Name || "Agent A"}</span>
-                    <span className="text-[10px] text-neutral-500">Reconfiguring...</span>
-                </div>
-                 <div className="flex flex-col items-center gap-2 opacity-80">
-                    <Dna className="text-orange-400 animate-spin-slow" size={32} />
-                    <span className="text-xs font-mono text-orange-200">{p2Name || "Agent B"}</span>
-                    <span className="text-[10px] text-neutral-500">Reconfiguring...</span>
-                </div>
+        {/* Content Container - Fades slightly when phase changes to simulate reload */}
+        <div className={`transition-opacity duration-300 flex flex-col items-center gap-8 ${phase === 'analyzing' ? 'opacity-100' : 'opacity-90'}`}>
+            {/* Animated Icon */}
+            <div className="relative">
+                <div className={`absolute inset-0 blur-xl rounded-full animate-ping ${phase === 'applying' ? 'bg-green-500/20' : 'bg-cyan-500/20'}`}></div>
+                <BrainCircuit size={80} className={`${phase === 'applying' ? 'text-green-400' : 'text-cyan-400'} relative z-10 animate-pulse transition-colors duration-500`} />
             </div>
-        )}
 
-        {/* Environment Preview Card */}
-        <div className="w-full bg-black/60 border border-white/10 rounded-xl p-6 text-left relative overflow-hidden group min-w-[300px]">
-            <div className="absolute top-0 right-0 p-2 text-[10px] text-neutral-600 font-mono">NEXT_MATCH_CONFIG</div>
+            <div>
+                <h2 className="text-4xl font-bold brand-font text-white mb-2 tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+                    {isDual ? "MULTI-AGENT EVOLUTION" : "NEURAL EVOLUTION"}
+                </h2>
+                <div className="h-1 w-24 bg-gradient-to-r from-cyan-500 to-transparent mx-auto mb-4"></div>
+                <p className={`font-mono text-sm animate-pulse uppercase tracking-widest ${phase === 'applying' ? 'text-green-400' : 'text-cyan-400'}`}>
+                    {statusMessage || "Optimizing Colony DNA..."}
+                </p>
+            </div>
             
-            <h3 className="text-neutral-500 text-xs uppercase tracking-widest mb-4 border-b border-white/5 pb-2">
-                Scanning Next Battlefield
-            </h3>
-            
-            <div className="flex items-center gap-3 mb-4">
-                <Wind className="text-blue-400 group-hover:rotate-12 transition-transform duration-500" size={24} />
-                <div>
-                    <div className="text-white font-bold text-lg">{arenaConfig.environmentName}</div>
-                    <div className="text-neutral-500 text-xs">Primary Conditions</div>
+            {isDual && (
+                <div className="flex justify-center gap-12 w-full">
+                    <div className="flex flex-col items-center gap-2 opacity-80">
+                        <Dna className={`animate-spin-slow ${phase === 'applying' ? 'text-green-400' : 'text-cyan-400'}`} size={32} />
+                        <span className="text-xs font-mono text-cyan-200">{p1Name || "Agent A"}</span>
+                        <span className="text-[10px] text-neutral-500 uppercase">{phase}</span>
+                    </div>
+                     <div className="flex flex-col items-center gap-2 opacity-80">
+                        <Dna className={`animate-spin-slow ${phase === 'applying' ? 'text-green-400' : 'text-orange-400'}`} size={32} />
+                        <span className="text-xs font-mono text-orange-200">{p2Name || "Agent B"}</span>
+                        <span className="text-[10px] text-neutral-500 uppercase">{phase}</span>
+                    </div>
                 </div>
-            </div>
+            )}
 
-            <div className="grid grid-cols-3 gap-4">
-                <div className="bg-white/5 p-3 rounded border border-white/5 flex flex-col items-center text-center">
-                    <Zap size={16} className="text-yellow-400 mb-1" />
-                    <span className="text-xs text-neutral-400 uppercase">Force</span>
-                    <span className="text-white font-mono font-bold">{arenaConfig.forceMultiplier.toFixed(1)}x</span>
+            {/* Environment Preview Card - Only show in analyzing phase */}
+            <div className={`w-full bg-black/60 border border-white/10 rounded-xl p-6 text-left relative overflow-hidden group min-w-[300px] transition-all duration-500 ${phase === 'applying' ? 'opacity-50 grayscale' : 'opacity-100'}`}>
+                <div className="absolute top-0 right-0 p-2 text-[10px] text-neutral-600 font-mono">NEXT_MATCH_CONFIG</div>
+                
+                <h3 className="text-neutral-500 text-xs uppercase tracking-widest mb-4 border-b border-white/5 pb-2">
+                    Scanning Next Battlefield
+                </h3>
+                
+                <div className="flex items-center gap-3 mb-4">
+                    <Wind className="text-blue-400 group-hover:rotate-12 transition-transform duration-500" size={24} />
+                    <div>
+                        <div className="text-white font-bold text-lg">{arenaConfig.environmentName}</div>
+                        <div className="text-neutral-500 text-xs">Primary Conditions</div>
+                    </div>
                 </div>
-                <div className="bg-white/5 p-3 rounded border border-white/5 flex flex-col items-center text-center">
-                    <Users size={16} className="text-purple-400 mb-1" />
-                    <span className="text-xs text-neutral-400 uppercase">Density</span>
-                    <span className="text-white font-mono font-bold">{arenaConfig.particleCount}</span>
-                </div>
-                <div className="bg-white/5 p-3 rounded border border-white/5 flex flex-col items-center text-center">
-                    <Disc size={16} className="text-green-400 mb-1" />
-                    <span className="text-xs text-neutral-400 uppercase">Friction</span>
-                    <span className="text-white font-mono font-bold">{arenaConfig.friction.toFixed(2)}</span>
+
+                <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-white/5 p-3 rounded border border-white/5 flex flex-col items-center text-center">
+                        <Zap size={16} className="text-yellow-400 mb-1" />
+                        <span className="text-xs text-neutral-400 uppercase">Force</span>
+                        <span className="text-white font-mono font-bold">{arenaConfig.forceMultiplier.toFixed(1)}x</span>
+                    </div>
+                    <div className="bg-white/5 p-3 rounded border border-white/5 flex flex-col items-center text-center">
+                        <Users size={16} className="text-purple-400 mb-1" />
+                        <span className="text-xs text-neutral-400 uppercase">Density</span>
+                        <span className="text-white font-mono font-bold">{arenaConfig.particleCount}</span>
+                    </div>
+                    <div className="bg-white/5 p-3 rounded border border-white/5 flex flex-col items-center text-center">
+                        <Disc size={16} className="text-green-400 mb-1" />
+                        <span className="text-xs text-neutral-400 uppercase">Friction</span>
+                        <span className="text-white font-mono font-bold">{arenaConfig.friction.toFixed(2)}</span>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <div className="flex items-center gap-2 text-neutral-500 text-xs font-mono border border-white/10 px-4 py-2 rounded-full">
-            <Loader2 size={12} className="animate-spin text-cyan-400" />
-            <span>Processing Genetic Algorithms...</span>
+            
+            <div className="flex items-center gap-2 text-neutral-500 text-xs font-mono border border-white/10 px-4 py-2 rounded-full">
+                <Loader2 size={12} className={`animate-spin ${phase === 'applying' ? 'text-green-400' : 'text-cyan-400'}`} />
+                <span>{phase === 'applying' ? 'Overwriting DNA Sequences...' : 'Processing Genetic Algorithms...'}</span>
+            </div>
         </div>
 
       </div>

@@ -251,7 +251,7 @@ const Arena: React.FC<Props> = ({
             }
             return prev - 1;
         });
-    }, 1000);
+    }, 750); // 25% Faster (Standard is 1000ms)
     return () => clearInterval(timer);
   }, [matchStatus, winner, rematchKey]);
 
