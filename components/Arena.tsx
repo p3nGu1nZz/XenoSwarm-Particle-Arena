@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ColonyDNA, MatchResult, ArenaConfig } from '../types';
 import { DEFAULT_ARENA_CONFIG } from '../constants';
 import SimulationView from './SimulationView';
-import Button from './Button';
 import { soundManager } from '../services/SoundService';
-import { Volume2, VolumeX, AlertOctagon, Activity } from 'lucide-react';
+import { Volume2, VolumeX, AlertOctagon, Activity, Swords, Shield } from 'lucide-react';
 
 interface Props {
   p1DNA: ColonyDNA;
@@ -79,41 +78,47 @@ const Arena: React.FC<Props> = ({
     setStats({ p1, p2, p1Escaped, p2Escaped, fps });
     
     if (matchStatus === 'active') {
-        const popChanged = Math.abs(p1 - lastPopCountRef.current) > 0;
+        const popChanged = Math.abs(p1 - lastPopCountRef.current) > 1; // Tolerance
         lastPopCountRef.current = p1;
+        const elapsedTime = 90 - timeLeftRef.current;
 
-        if (popChanged) {
-            stagnationCounterRef.current = Math.max(0, stagnationCounterRef.current - 2);
-        } else {
-            const history = distanceHistoryRef.current;
-            history.push(centroidDist);
-            if (history.length > 10) history.shift(); 
+        // Stagnation Detection Logic
+        // Only start checking stagnation after 10 seconds to allow initial deployment
+        if (elapsedTime > 10) {
+            if (popChanged) {
+                stagnationCounterRef.current = Math.max(0, stagnationCounterRef.current - 1);
+            } else {
+                const history = distanceHistoryRef.current;
+                history.push(centroidDist);
+                if (history.length > 20) history.shift(); 
 
-            const isFrozen = avgSpeed < 0.5;
-            let isNotClosing = false;
-            if (history.length >= 4) {
-                const startDist = history[0];
-                const currentDist = centroidDist;
-                if ((startDist - currentDist) < 20 && centroidDist > 200) {
-                    isNotClosing = true;
+                // Calculate variance in centroid distance to detect movement
+                let variance = 0;
+                if (history.length > 5) {
+                    const mean = history.reduce((a, b) => a + b, 0) / history.length;
+                    variance = history.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / history.length;
+                }
+
+                // Low variance AND reasonable distance means they are stuck staring at each other
+                if (variance < 50 && centroidDist > 100) {
+                    stagnationCounterRef.current += 0.5;
+                } else if (avgSpeed < 0.3) {
+                    stagnationCounterRef.current += 0.2;
+                } else {
+                    stagnationCounterRef.current = Math.max(0, stagnationCounterRef.current - 0.1);
                 }
             }
 
-            if (isFrozen || isNotClosing) {
-                stagnationCounterRef.current++;
-            } else {
-                stagnationCounterRef.current = Math.max(0, stagnationCounterRef.current - 1);
+            if (stagnationCounterRef.current > 10) {
+                setIsStagnated(true);
+            } else if (stagnationCounterRef.current < 3) {
+                setIsStagnated(false);
             }
-        }
-
-        if (stagnationCounterRef.current > 5) {
-            setIsStagnated(true);
-        } else {
-            setIsStagnated(false);
         }
     }
 
     if (matchStatus === 'active' && !winner) {
+        // Absolute Wipeout Condition (Instant End)
         if (p1 === 0 && p2 > 0) {
             setWinner('p2');
             setMatchStatus('finished');
@@ -126,28 +131,17 @@ const Arena: React.FC<Props> = ({
         }
 
         const total = p1 + p2;
-        if (total > 50) {
+        const elapsedTime = 90 - timeLeftRef.current;
+
+        // Mercy Rule / Decimation Logic
+        // We add a Grace Period of 15 seconds where we don't call mercy 
+        // to prevent bad spawns from ending the game instantly.
+        if (elapsedTime > 15 && total > 50) {
            const initialCount = arenaConfig.particleCount * 2;
-           if (p1 > p2 * 2.0 && p1 > initialCount) {
-              setWinner('p1');
-              setMatchStatus('finished');
-              return;
-           }
-           if (p2 > p1 * 2.0 && p2 > initialCount) {
-              setWinner('p2');
-              setMatchStatus('finished');
-              return;
-           }
-           if (p1 > p2 * 3.0) {
-              setWinner('p1');
-              setMatchStatus('finished');
-              return;
-           } 
-           if (p2 > p1 * 3.0) {
-              setWinner('p2');
-              setMatchStatus('finished');
-              return;
-           }
+           
+           // If one side has 4x the other, call it.
+           if (p1 > p2 * 4.0) { setWinner('p1'); setMatchStatus('finished'); return; }
+           if (p2 > p1 * 4.0) { setWinner('p2'); setMatchStatus('finished'); return; }
         }
     }
   };
@@ -166,22 +160,68 @@ const Arena: React.FC<Props> = ({
     setCountdown(3);
   }, [rematchKey, p1DNA, p2DNA]);
 
+  // AI STRATEGY LOOP
   useEffect(() => {
     if (!isAutoMode || matchStatus !== 'active') return;
 
     const interval = setInterval(() => {
-       if (stagnationCounterRef.current > 5) {
-           if (!tacticsRef.current.p1Aggressive) {
-               tacticsRef.current.p1Aggressive = true;
-               setTacticsDisplay(prev => ({ ...prev, p1Aggressive: true }));
+       const s = statsRef.current;
+       const p1Count = s.p1;
+       const p2Count = s.p2;
+       const isStuck = stagnationCounterRef.current > 6;
+       
+       const decideTactics = (myCount: number, enemyCount: number) => {
+           const ratio = myCount / (enemyCount + 1);
+           let agg = false;
+           let ret = false;
+           
+           if (isStuck) {
+               // STAGNATION BREAKER: FLANKING MANEUVER
+               // Oscillate between Retreat (Spread) and Aggressive (Collapse)
+               const cycle = Date.now() % 5000;
+               if (cycle < 2000) {
+                   ret = true; // Spread out to flank/surround
+               } else {
+                   agg = true; // Collapse on center
+               }
+           } else {
+               // DYNAMIC COMBAT
+               if (ratio > 1.25) {
+                   // Winning: Press advantage
+                   agg = true;
+               } else if (ratio < 0.75) {
+                   // Losing: Guerilla Tactics
+                   // Retreat to lure, then snap back
+                   const cycle = Date.now() % 4000;
+                   if (cycle < 2000) ret = true;
+                   else agg = true;
+               } else {
+                   // Even Match: Probing Attacks
+                   const cycle = Date.now() % 3000;
+                   if (cycle > 2000) agg = true;
+               }
            }
-           if (!tacticsRef.current.p2Aggressive) {
-               tacticsRef.current.p2Aggressive = true;
-               setTacticsDisplay(prev => ({ ...prev, p2Aggressive: true }));
-           }
-           return; 
-       }
-    }, 1000);
+           return { agg, ret };
+       };
+
+       const p1T = decideTactics(p1Count, p2Count);
+       const p2T = decideTactics(p2Count, p1Count);
+
+       tacticsRef.current = {
+           p1Aggressive: p1T.agg,
+           p1Retreat: p1T.ret,
+           p2Aggressive: p2T.agg,
+           p2Retreat: p2T.ret
+       };
+
+       setTacticsDisplay({
+           p1Aggressive: p1T.agg,
+           p1Retreat: p1T.ret,
+           p2Aggressive: p2T.agg,
+           p2Retreat: p2T.ret
+       });
+
+    }, 500); // Fast reaction time
     return () => clearInterval(interval);
   }, [isAutoMode, matchStatus]);
 
@@ -202,12 +242,9 @@ const Arena: React.FC<Props> = ({
             if (prev <= 1) {
                 clearInterval(timer);
                 const s = statsRef.current;
-                const total = s.p1 + s.p2;
                 let w: 'p1' | 'p2' | 'draw' = 'draw';
-                
                 if (s.p1 > s.p2) w = 'p1';
                 else if (s.p2 > s.p1) w = 'p2';
-                
                 setWinner(w);
                 setMatchStatus('finished');
                 return 0;
@@ -249,9 +286,12 @@ const Arena: React.FC<Props> = ({
          
          {/* Player 1 Stats */}
          <div className="flex flex-col items-start gap-2 pointer-events-auto">
-            <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl border border-cyan-500/30 p-4 clip-tech-border min-w-[340px] shadow-lg">
-                <div className="flex flex-col items-center justify-center border-r border-white/10 pr-4">
-                    <span className="text-4xl font-black text-cyan-400 brand-font leading-none">{stats.p1}</span>
+            <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl border border-cyan-500/30 p-4 clip-tech-border min-w-[340px] shadow-lg transition-all duration-300">
+                <div className="flex flex-col items-center justify-center border-r border-white/10 pr-4 w-24">
+                    {/* Fixed Width for Score to prevent jitter */}
+                    <span className="text-4xl font-black text-cyan-400 brand-font leading-none tabular-nums text-center w-full block">
+                        {stats.p1}
+                    </span>
                     <span className="text-[10px] uppercase tracking-widest text-neutral-500 mt-1">Units</span>
                 </div>
                 <div className="flex-1">
@@ -259,12 +299,19 @@ const Arena: React.FC<Props> = ({
                         {p1DNA.name}
                     </h3>
                     <div className="flex items-center gap-2 mt-1 h-5">
-                        {tacticsDisplay.p1Retreat && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-red-500/50">Retreat</span>}
-                        {tacticsDisplay.p1Aggressive && <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-yellow-500/50">Berserk</span>}
+                        {tacticsDisplay.p1Retreat && (
+                            <span className="flex items-center gap-1 bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-red-500/50">
+                                <Shield size={10} /> Regrouping
+                            </span>
+                        )}
+                        {tacticsDisplay.p1Aggressive && (
+                            <span className="flex items-center gap-1 bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-yellow-500/50">
+                                <Swords size={10} /> Berserk
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>
-            {/* Health Bar 1 */}
             <div className="w-full h-2 bg-neutral-900 border border-white/10 relative overflow-hidden skew-x-[-15deg]">
                 <div className="absolute top-0 left-0 h-full bg-cyan-500 shadow-[0_0_10px_#00f3ff] transition-all duration-300" style={{ width: `${Math.min(100, (stats.p1 / (arenaConfig.particleCount * 2)) * 100)}%` }}></div>
             </div>
@@ -274,7 +321,7 @@ const Arena: React.FC<Props> = ({
          <div className="flex flex-col items-center pointer-events-auto mt-2">
              <div className="relative">
                  <div className="absolute inset-0 bg-black/60 blur-md rounded-full"></div>
-                 <div className={`relative text-5xl font-black brand-font tracking-tighter ${isDangerTime ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                 <div className={`relative text-5xl font-black brand-font tracking-tighter w-32 text-center tabular-nums ${isDangerTime ? 'text-red-500 animate-pulse' : 'text-white'}`}>
                     {timeString}
                  </div>
              </div>
@@ -288,9 +335,12 @@ const Arena: React.FC<Props> = ({
 
          {/* Player 2 Stats */}
          <div className="flex flex-col items-end gap-2 pointer-events-auto text-right">
-            <div className="flex flex-row-reverse items-center gap-4 bg-black/40 backdrop-blur-xl border border-pink-500/30 p-4 clip-tech-border min-w-[340px] shadow-lg transform scale-x-[-1]">
-                <div className="flex flex-col items-center justify-center border-r border-white/10 pr-4 transform scale-x-[-1]">
-                    <span className="text-4xl font-black text-pink-400 brand-font leading-none">{stats.p2}</span>
+            <div className="flex flex-row-reverse items-center gap-4 bg-black/40 backdrop-blur-xl border border-pink-500/30 p-4 clip-tech-border min-w-[340px] shadow-lg transform scale-x-[-1] transition-all duration-300">
+                <div className="flex flex-col items-center justify-center border-r border-white/10 pr-4 transform scale-x-[-1] w-24">
+                    {/* Fixed Width for Score */}
+                    <span className="text-4xl font-black text-pink-400 brand-font leading-none tabular-nums text-center w-full block">
+                        {stats.p2}
+                    </span>
                     <span className="text-[10px] uppercase tracking-widest text-neutral-500 mt-1">Units</span>
                 </div>
                 <div className="flex-1 transform scale-x-[-1]">
@@ -298,12 +348,19 @@ const Arena: React.FC<Props> = ({
                         {p2DNA.name}
                     </h3>
                     <div className="flex flex-row-reverse items-center gap-2 mt-1 h-5">
-                        {tacticsDisplay.p2Retreat && <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-red-500/50">Retreat</span>}
-                        {tacticsDisplay.p2Aggressive && <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-yellow-500/50">Berserk</span>}
+                        {tacticsDisplay.p2Retreat && (
+                            <span className="flex items-center gap-1 bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-red-500/50">
+                                <Shield size={10} /> Regrouping
+                            </span>
+                        )}
+                        {tacticsDisplay.p2Aggressive && (
+                            <span className="flex items-center gap-1 bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse border border-yellow-500/50">
+                                <Swords size={10} /> Berserk
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>
-            {/* Health Bar 2 */}
             <div className="w-full h-2 bg-neutral-900 border border-white/10 relative overflow-hidden skew-x-[15deg]">
                 <div className="absolute top-0 right-0 h-full bg-pink-500 shadow-[0_0_10px_#ff0055] transition-all duration-300" style={{ width: `${Math.min(100, (stats.p2 / (arenaConfig.particleCount * 2)) * 100)}%` }}></div>
             </div>
@@ -312,8 +369,8 @@ const Arena: React.FC<Props> = ({
 
       {isStagnated && matchStatus === 'active' && (
           <div className="absolute top-32 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-             <div className="flex items-center gap-3 bg-red-900/40 border border-red-500/50 text-red-200 px-6 py-2 font-bold uppercase tracking-widest animate-pulse backdrop-blur-md">
-                 <AlertOctagon size={18} /> STAGNATION DETECTED // FORCE ESCALATION
+             <div className="flex items-center gap-3 bg-red-900/60 border border-red-500/50 text-red-100 px-8 py-3 font-bold uppercase tracking-widest animate-pulse backdrop-blur-md shadow-[0_0_20px_rgba(239,68,68,0.4)] clip-tech-border">
+                 <AlertOctagon size={24} /> STAGNATION DETECTED // FLANKING PROTOCOLS ENGAGED
              </div>
           </div>
       )}

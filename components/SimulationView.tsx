@@ -266,9 +266,20 @@ const SimulationView: React.FC<Props> = ({
          }
       }
 
-      // Draw Particles with simulated chromatic aberration offset
-      // We draw the particles twice slightly offset in color channels if we had webgl
-      // But for 2D canvas, we stick to high quality blending
+      // Draw Effects (Sparks/Explosions)
+      if (engine.effects.length > 0) {
+        ctx.globalCompositeOperation = 'lighter'; // Additive blending for glow
+        for(const eff of engine.effects) {
+            ctx.globalAlpha = eff.life;
+            ctx.fillStyle = eff.color;
+            ctx.beginPath();
+            ctx.arc(eff.x, eff.y, 2.5, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+      }
+
+      // Draw Particles
       ctx.globalCompositeOperation = 'screen';
 
       for (let i = 0; i < count; i++) {
@@ -390,7 +401,8 @@ const SimulationView: React.FC<Props> = ({
          <div className="absolute bottom-4 left-4 w-16 h-16 border-l-2 border-b-2 border-cyan-500/50 rounded-bl-lg z-20 pointer-events-none"></div>
          <div className="absolute bottom-4 right-4 w-16 h-16 border-r-2 border-b-2 border-cyan-500/50 rounded-br-lg z-20 pointer-events-none"></div>
          
-         <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-1 border border-white/10 rounded-full text-[10px] mono-font text-white/50 z-20 pointer-events-none">
+         {/* Status Text - Moved lower to avoid Timer overlap */}
+         <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-1 border border-white/10 rounded-full text-[10px] mono-font text-white/50 z-20 pointer-events-none">
              SIMULATION_FEED_LIVE
          </div>
 

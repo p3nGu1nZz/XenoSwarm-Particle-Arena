@@ -13,6 +13,16 @@ const GRID_SIZE = 40; // Size of grid cells (should be >= max interaction radius
 const GRID_COLS = Math.ceil(CANVAS_WIDTH / GRID_SIZE);
 const GRID_ROWS = Math.ceil(CANVAS_HEIGHT / GRID_SIZE);
 
+// Visual only effect particle
+export interface EffectParticle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number; // 0.0 to 1.0
+    color: string;
+}
+
 export class SimulationEngine {
   count: number;
   positions: Float32Array;
@@ -33,6 +43,8 @@ export class SimulationEngine {
   p2Escaped: number = 0;
   time: number = 0;
 
+  effects: EffectParticle[] = [];
+
   frameEvents = {
     collisions: 0,
     captures: 0,
@@ -40,7 +52,7 @@ export class SimulationEngine {
   };
 
   // Spatial Grid: Stores indices of particles in each cell
-  // We use a flat array of arrays for simplicity in JS, though TypedArrays would be faster in C++
+  // We use a flat array of arrays for simplicity in JS
   grid: number[][]; 
 
   constructor(maxParticles: number) {
@@ -67,6 +79,7 @@ export class SimulationEngine {
     this.p2Escaped = 0;
     this.trailHistory.fill(0);
     this.time = 0;
+    this.effects = [];
     this.resetEvents();
   }
 
@@ -185,6 +198,22 @@ export class SimulationEngine {
 
       this.count++;
     }
+  }
+
+  spawnExplosion(x: number, y: number, color: string) {
+      const particleCount = 6;
+      for(let i=0; i<particleCount; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 4 + 1;
+          this.effects.push({
+              x: x,
+              y: y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              life: 1.0,
+              color: color
+          });
+      }
   }
 
   updateTrails() {
@@ -386,6 +415,19 @@ export class SimulationEngine {
           if (pos[i * 2 + 1] >= CANVAS_HEIGHT) pos[i * 2 + 1] -= CANVAS_HEIGHT;
       }
     }
+
+    // 4. Update Effects (Sparks)
+    for(let i=this.effects.length-1; i>=0; i--) {
+        const p = this.effects[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.05;
+        p.vx *= 0.9;
+        p.vy *= 0.9;
+        if(p.life <= 0) {
+            this.effects.splice(i, 1);
+        }
+    }
   }
 
   updateBattleLogic() {
@@ -393,6 +435,7 @@ export class SimulationEngine {
       const pos = this.positions;
       const owners = this.owners;
       const types = this.types;
+      const colors = this.colors;
 
       for(let i=0; i<count; i++) {
           if (Math.random() > 0.05) continue; 
@@ -444,6 +487,15 @@ export class SimulationEngine {
           if (enemyPressure > friendlySupport + 2) {
               owners[i] = enemyOwner;
               this.frameEvents.captures++; 
+              
+              // Find color index for new owner
+              let colorIdx = 0;
+              if (enemyOwner === 1) colorIdx = types[i]; // Keep same type, just swap owner
+              else if (enemyOwner === 2) colorIdx = 2 + types[i];
+              
+              const spawnColor = colors[colorIdx] || '#fff';
+              this.spawnExplosion(px, py, spawnColor);
+
               this.velocities[i*2] *= -0.5;
               this.velocities[i*2+1] *= -0.5;
           }
@@ -506,10 +558,6 @@ export class SimulationEngine {
   findParticleAt(x: number, y: number, radius: number = 20): number {
     let bestIdx = -1;
     let bestDistSq = radius * radius;
-    
-    // We can use the grid here too for optimization if needed, 
-    // but mouse interaction is rare enough that simple loop is fine.
-    // Implementing grid query here for completeness.
     
     const cx = Math.floor(x / GRID_SIZE);
     const cy = Math.floor(y / GRID_SIZE);

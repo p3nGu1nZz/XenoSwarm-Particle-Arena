@@ -8,8 +8,10 @@ const SCALE_MINOR = [0, 2, 3, 5, 7, 8, 10, 12]; // Natural Minor
 const SCALE_LYDIAN = [0, 2, 4, 6, 7, 9, 11, 12]; // Ethereal / Sci-fi
 const SCALE_PHRYGIAN = [0, 1, 3, 5, 7, 8, 10, 12]; // Tension / Dark
 const SCALE_PENTATONIC_MAJOR = [0, 2, 4, 7, 9, 12]; // Menu / Chill
+const SCALE_DORIAN = [0, 2, 3, 5, 7, 9, 10, 12]; // Jazzy / Sci-fi Noir
+const SCALE_LOCRIAN = [0, 1, 3, 5, 6, 8, 10, 12]; // Unsettling / Alien
 
-type ThemeType = 'MENU' | 'BATTLE_STD' | 'BATTLE_VOID' | 'BATTLE_SOUP' | 'EVOLUTION' | 'LEADERBOARD';
+type ThemeType = 'MENU' | 'BATTLE_STD' | 'BATTLE_VOID' | 'BATTLE_SOUP' | 'BATTLE_DARK' | 'BATTLE_ACID' | 'EVOLUTION' | 'LEADERBOARD';
 
 interface ThemeConfig {
   scale: number[];
@@ -57,6 +59,24 @@ const THEMES: Record<ThemeType, ThemeConfig> = {
     padCutoff: 300,
     reverbLevel: 0.6,
     waveType: 'square'
+  },
+  BATTLE_DARK: {
+    scale: SCALE_LOCRIAN,
+    baseOctave: 1,
+    bpm: 100,
+    arpRate: 0.7,
+    padCutoff: 200,
+    reverbLevel: 0.6,
+    waveType: 'sawtooth'
+  },
+  BATTLE_ACID: {
+      scale: SCALE_DORIAN,
+      baseOctave: 2,
+      bpm: 125,
+      arpRate: 0.8,
+      padCutoff: 1500,
+      reverbLevel: 0.3,
+      waveType: 'square'
   },
   EVOLUTION: {
     scale: SCALE_LYDIAN,
@@ -372,12 +392,16 @@ class SoundService {
   private collision: Howl;
   private musicEngine: SynthEngine;
   public enabled: boolean = true;
-  private lastTime = 0;
+  
+  // Separate timers for different SFX types
+  private lastCaptureTime = 0;
+  private lastCollisionTime = 0;
 
   constructor() {
     this.musicEngine = new SynthEngine();
-    this.capture = new Howl({ src: [captureURI], format: ['wav'], volume: 0.4, pool: 5 });
-    this.collision = new Howl({ src: [collisionURI], format: ['wav'], volume: 0.2, pool: 5 });
+    // Increase pool size to allow more overlapping instances
+    this.capture = new Howl({ src: [captureURI], format: ['wav'], volume: 0.4, pool: 10 });
+    this.collision = new Howl({ src: [collisionURI], format: ['wav'], volume: 0.2, pool: 20 });
   }
 
   initialize() {
@@ -393,7 +417,13 @@ class SoundService {
       else if (scene === 'arena') {
           if (envName?.includes('Vacuum')) theme = 'BATTLE_VOID';
           else if (envName?.includes('Soup')) theme = 'BATTLE_SOUP';
-          else theme = 'BATTLE_STD';
+          else {
+              // Random selection for standard battles to increase variety
+              const rand = Math.random();
+              if (rand < 0.33) theme = 'BATTLE_STD';
+              else if (rand < 0.66) theme = 'BATTLE_DARK';
+              else theme = 'BATTLE_ACID';
+          }
       }
 
       this.musicEngine.setTheme(theme);
@@ -402,13 +432,33 @@ class SoundService {
   playBatch(events: any) {
     if (!this.enabled) return;
     const now = Date.now();
-    // Throttled SFX to prevent audio tearing
-    if (events.captures > 0 && now - this.lastTime > 150) {
-        this.capture.play();
-        this.lastTime = now;
-    } else if (events.collisions > 5 && now - this.lastTime > 150) {
-        this.collision.play();
-        this.lastTime = now;
+
+    // Captures (higher priority, distinct sound)
+    if (events.captures > 0) {
+        // Allow bursts but prevent machine gunning too fast
+        if (now - this.lastCaptureTime > 60) {
+            const id = this.capture.play();
+            // Vary pitch slightly (0.9 to 1.1)
+            this.capture.rate(0.9 + Math.random() * 0.2, id);
+            this.lastCaptureTime = now;
+        }
+    }
+
+    // Collisions (background texture)
+    if (events.collisions > 0) {
+        // Collisions can overlap significantly
+        if (now - this.lastCollisionTime > 40) {
+            const id = this.collision.play();
+            // Vary pitch more for collisions (0.8 to 1.2)
+            this.collision.rate(0.8 + Math.random() * 0.4, id);
+            
+            // Dynamic volume based on collision density, capped at max volume
+            const intensity = Math.min(events.collisions, 10) / 10; 
+            const vol = 0.1 + (intensity * 0.2); 
+            this.collision.volume(vol, id);
+            
+            this.lastCollisionTime = now;
+        }
     }
   }
 
