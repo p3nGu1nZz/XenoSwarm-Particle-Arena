@@ -30,7 +30,7 @@ const getParticleSprite = (color: string, radius: number): HTMLCanvasElement => 
   if (particleSprites[key]) return particleSprites[key];
 
   const canvas = document.createElement('canvas');
-  const size = radius * 8; 
+  const size = radius * 12; // Larger for glow
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -39,21 +39,21 @@ const getParticleSprite = (color: string, radius: number): HTMLCanvasElement => 
   const center = size / 2;
 
   // Outer Soft Glow
-  const grad = ctx.createRadialGradient(center, center, radius, center, center, radius * 4);
+  const grad = ctx.createRadialGradient(center, center, radius, center, center, radius * 5);
   grad.addColorStop(0, color);
   grad.addColorStop(1, 'transparent'); 
 
-  ctx.globalAlpha = 0.4;
+  ctx.globalAlpha = 0.5;
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(center, center, radius * 4, 0, Math.PI * 2);
+  ctx.arc(center, center, radius * 5, 0, Math.PI * 2);
   ctx.fill();
   
   // Inner Core
   ctx.globalAlpha = 1.0;
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.arc(center, center, radius * 0.8, 0, Math.PI * 2);
+  ctx.arc(center, center, radius * 0.9, 0, Math.PI * 2);
   ctx.fill();
 
   particleSprites[key] = canvas;
@@ -178,7 +178,6 @@ const SimulationView: React.FC<Props> = ({
         bgCtx.lineWidth = 2;
         const hexSize = 60;
         
-        // Simple grid for performance
         bgCtx.beginPath();
         for(let x=0; x<=CANVAS_WIDTH; x+=hexSize) {
            bgCtx.moveTo(x, 0);
@@ -218,6 +217,7 @@ const SimulationView: React.FC<Props> = ({
       const history = engine.trailHistory;
       const stride = TRAIL_LENGTH * 2;
 
+      // Draw Trails
       if (showTrails && trailCanvasRef.current) {
          const tCtx = trailCanvasRef.current.getContext('2d');
          if (tCtx) {
@@ -266,6 +266,9 @@ const SimulationView: React.FC<Props> = ({
          }
       }
 
+      // Draw Particles with simulated chromatic aberration offset
+      // We draw the particles twice slightly offset in color channels if we had webgl
+      // But for 2D canvas, we stick to high quality blending
       ctx.globalCompositeOperation = 'screen';
 
       for (let i = 0; i < count; i++) {
@@ -283,7 +286,7 @@ const SimulationView: React.FC<Props> = ({
         const sprite = getParticleSprite(color, radius);
         const px = (pos[i * 2] | 0);
         const py = (pos[i * 2 + 1] | 0);
-        const offset = radius * 4; 
+        const offset = radius * 6; // Half of sprite size (radius * 12)
 
         ctx.drawImage(sprite, px - offset, py - offset);
       }
@@ -308,8 +311,8 @@ const SimulationView: React.FC<Props> = ({
          }
       }
 
+      // Selection UI
       ctx.globalCompositeOperation = 'source-over';
-
       if (activeSelectedIdx !== null && activeSelectedIdx < count) {
           const debugInfo = engine.inspectParticle(activeSelectedIdx);
           if (debugInfo) {
